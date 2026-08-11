@@ -24,7 +24,7 @@ if(IDF_TARGET STREQUAL "esp32c3")
         "${FREEINK_BOARDCFG_DIR}/include"
     )
     set(EINK_REQUIRES nvs_flash freertos log driver esp_wifi esp_netif lwip)
-    set(EINK_PRIV_REQUIRES arduino)
+    set(EINK_PRIV_REQUIRES arduino freeink_hw)
 else()
     set(EINK_SRCS "")
     set(EINK_PRIV_INCLUDE_DIRS "")

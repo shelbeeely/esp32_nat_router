@@ -3,15 +3,25 @@
 /* Reticulum Network Stack transport node, via the microReticulum SDK
  * (github.com/attermann/microReticulum, vendored as third_party git
  * submodules). Runs the router as a Reticulum transport/relay node reachable
- * over UDP broadcast on the AP LAN (port 4242, matching the reference
- * implementation's UDP interface convention) -- fitting, since that's
- * already this firmware's job for IP traffic.
+ * over two interfaces:
+ *  - UDP broadcast on the AP LAN (port 4242, matching the reference
+ *    implementation's UDP interface convention).
+ *  - ESP-NOW broadcast (EspNowInterface), for direct router-to-router mesh
+ *    discovery/messaging between multiple deployed X4 units, independent of
+ *    either unit's WiFi AP/STA/uplink state.
+ *
+ * Scope note: this is a Reticulum mesh link between router units (identity
+ * announces, path discovery, messages/links carried by Reticulum itself) --
+ * NOT a bridge for this router's own NAT'd IP/WAN traffic. Using ESP-NOW to
+ * fail over actual routed internet traffic between units, if ever wanted, is
+ * a distinct and much larger feature (a virtual netif + IP bridging over the
+ * mesh) and is intentionally not what this does.
  *
  * EXPERIMENTAL. This has not been compiled or run on real hardware: no
- * ESP-IDF toolchain was available to build it where it was written. See
- * components/microreticulum/README.md for the dependency graph, the known
- * gaps (crypto library provenance, RAM budget, untuned allocator pool size),
- * and what to check on a first real build. Disabled by default; ESP32-C3 only.
+ * ESP-IDF toolchain was available to build it where it was written. See the
+ * known-gaps comment below (dependency provenance, RAM budget, untuned
+ * allocator pool size, ESP-NOW's payload limit) before enabling it.
+ * Disabled by default; ESP32-C3 only.
  *
  * No application Destination is created -- this mirrors microReticulum's own
  * udp_transport example (a pure relay node, no local endpoint), which keeps
@@ -52,6 +62,10 @@ extern "C" {
  *    happens when CONFIG_STORE_HISTORY is enabled. If it's off, this fails
  *    closed (fs.init() error, task exits, logged) rather than mounting its
  *    own filesystem -- avoids a second, possibly conflicting FATFS mount.
+ *  - EspNowInterface caps packets at 250 bytes (ESP-NOW's hard limit) with no
+ *    fragmentation; anything larger is dropped rather than sent corrupted.
+ *    See EspNowInterface.h. Only one instance is supported at a time (a
+ *    static-pointer bridge from ESP-NOW's C callback into the interface).
  */
 
 /**

@@ -39,6 +39,7 @@
 #include "esp_wifi.h"
 #include "esp_netif_ip_addr.h"
 #include "lwip/ip4_addr.h"
+#include "freeink_hw.h"
 
 /* Extern router globals (avoid including router_globals.h to prevent circular
  * deps, same approach as oled_display.c). These are defined in C files, so
@@ -197,6 +198,15 @@ static void render_status(freeink::FreeInkDisplay &display)
 
     snprintf(line, sizeof(line), "Heap:    %lu KB free", (unsigned long)(esp_get_free_heap_size() / 1024));
     fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
+    y += line_h;
+
+    bool hwEnabled = false;
+    freeink_hw_get_config(&hwEnabled);
+    if (hwEnabled) {
+        snprintf(line, sizeof(line), "Battery: %u%%%s", (unsigned)freeink_hw_get_battery_percent(),
+                 freeink_hw_is_charging() ? " (charging)" : "");
+        fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
+    }
 }
 
 /* ---- FreeRTOS task ---- */

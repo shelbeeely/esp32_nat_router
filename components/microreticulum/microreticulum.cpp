@@ -18,6 +18,7 @@
 #include <microStore/FileSystem.h>
 
 #include "RouterUdpInterface.h"
+#include "EspNowInterface.h"
 #include "FatFsFileSystem.h"
 
 #include "esp_log.h"
@@ -39,6 +40,7 @@ static const char *TAG = "microrns";
 
 static RNS::Reticulum reticulum({RNS::Type::NONE});
 static RNS::Interface udp_interface(RNS::Type::NONE);
+static RNS::Interface espnow_interface(RNS::Type::NONE);
 
 static void reticulum_task(void *arg)
 {
@@ -73,6 +75,16 @@ static void reticulum_task(void *arg)
         return;
     }
 
+    /* Router-to-router mesh discovery, independent of either unit's WiFi
+     * AP/STA/uplink state. Non-fatal if it fails to start (e.g. esp_now_init
+     * issue) -- the node still runs with the UDP interface alone. */
+    espnow_interface = new EspNowInterface();
+    espnow_interface.mode(RNS::Type::Interface::MODE_GATEWAY);
+    RNS::Transport::register_interface(espnow_interface);
+    if (!espnow_interface.start()) {
+        ESP_LOGW(TAG, "Failed to start Reticulum ESP-NOW interface - continuing with UDP only");
+    }
+
     /* Leave Reticulum::storagepath()/cachepath() at their defaults ("." /
      * "./cache") -- FatFsFileSystem's basepath (RNS_STORAGE_PATH) already
      * grounds every relative path it's handed. Overriding storagepath() here
@@ -84,7 +96,8 @@ static void reticulum_task(void *arg)
     reticulum.remote_management_enabled(true);
     reticulum.start();
 
-    ESP_LOGI(TAG, "Reticulum transport node running (UDP broadcast :%d)", RNS_UDP_PORT);
+    ESP_LOGI(TAG, "Reticulum transport node running (UDP broadcast :%d%s)", RNS_UDP_PORT,
+             espnow_interface.online() ? " + ESP-NOW" : "");
 
     while (true) {
         reticulum.loop();

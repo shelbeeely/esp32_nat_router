@@ -51,6 +51,7 @@ extern void    web_ui_set_bind(uint8_t bind);
 #include "syslog_client.h"
 #include "oled_display.h"
 #include "eink_display.h"
+#include "freeink_hw.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 
@@ -105,6 +106,8 @@ static void register_set_oled_gpio(void);
 #endif
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
 static void register_set_eink(void);
+static void register_set_freeink_hw(void);
+static void register_battery(void);
 #endif
 #if !CONFIG_ETH_UPLINK
 static void register_scan(void);
@@ -455,6 +458,8 @@ void register_router(void)
 #endif
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
     register_set_eink();
+    register_set_freeink_hw();
+    register_battery();
 #endif
 }
 
@@ -3588,6 +3593,72 @@ static void register_set_eink(void)
                 "  set_eink disable      - Disable e-ink display (after reboot)",
         .hint = " <enable|disable>",
         .func = &set_eink_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+/* 'set_freeink_hw' command - enable/disable Xteink X4 buttons/battery/power */
+static int set_freeink_hw_cmd(int argc, char **argv)
+{
+    if (argc < 2) {
+        bool enabled;
+        freeink_hw_get_config(&enabled);
+        printf("Xteink X4 hardware support (buttons/battery/power): %s\n", enabled ? "enabled" : "disabled");
+        printf("\nUsage: set_freeink_hw <enable|disable>\n");
+        return 0;
+    }
+
+    const char *action = argv[1];
+    if (strcmp(action, "enable") == 0) {
+        freeink_hw_enable();
+        printf("Xteink X4 hardware support will be enabled after reboot.\n");
+    } else if (strcmp(action, "disable") == 0) {
+        freeink_hw_disable();
+        printf("Xteink X4 hardware support will be disabled after reboot.\n");
+    } else {
+        printf("Unknown action: %s\n", action);
+        printf("Usage: set_freeink_hw <enable|disable>\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static void register_set_freeink_hw(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "set_freeink_hw",
+        .help = "Enable or disable Xteink X4 buttons/battery/power management\n"
+                "  set_freeink_hw              - Show current status\n"
+                "  set_freeink_hw enable       - Enable (after reboot)\n"
+                "  set_freeink_hw disable      - Disable (after reboot)",
+        .hint = " <enable|disable>",
+        .func = &set_freeink_hw_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+/* 'battery' command - show Xteink X4 battery status */
+static int battery_cmd(int argc, char **argv)
+{
+    bool enabled;
+    freeink_hw_get_config(&enabled);
+    if (!enabled) {
+        printf("Battery monitoring not enabled - run 'set_freeink_hw enable' and reboot.\n");
+        return 1;
+    }
+
+    printf("Battery: %u%%%s\n", (unsigned)freeink_hw_get_battery_percent(),
+           freeink_hw_is_charging() ? " (charging)" : "");
+    return 0;
+}
+
+static void register_battery(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "battery",
+        .help = "Show Xteink X4 battery status",
+        .func = &battery_cmd,
     };
     ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
 }

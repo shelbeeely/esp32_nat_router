@@ -68,6 +68,7 @@
 #include "syslog_client.h"
 #include "oled_display.h"
 #include "eink_display.h"
+#include "freeink_hw.h"
 #include "microreticulum.h"
 #include "led_strip_status.h"
 #if !defined(CONFIG_IDF_TARGET_ESP32C5)
@@ -1569,6 +1570,9 @@ void app_main(void)
 
     // Initialize Xteink X4 e-ink status display (ESP32-C3, disabled by default)
     eink_display_init();
+
+    // Initialize Xteink X4 buttons/battery/power management (ESP32-C3, disabled by default)
+    freeink_hw_init();
 
     // Initialize Reticulum transport node (ESP32-C3, EXPERIMENTAL, disabled by default)
     microreticulum_init();

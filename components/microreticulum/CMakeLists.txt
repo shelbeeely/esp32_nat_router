@@ -31,6 +31,7 @@ if(IDF_TARGET STREQUAL "esp32c3")
         ${RNS_SRCS}
         ${CRYPTO_SRCS}
         "RouterUdpInterface.cpp"
+        "EspNowInterface.cpp"
         "FatFsFileSystem.cpp"
         "microreticulum.cpp"
     )
