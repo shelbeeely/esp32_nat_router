@@ -37,6 +37,7 @@ Starting from this code base I started several spin-off projects with slightly d
 - **Remote Console**: Network-accessible CLI via TCP (password protected, per-interface binding)
 - **LED Status Indicator**: Visual feedback via plain GPIO LED or addressable LED strip (WS2812/SK6812) with color-coded status
 - **OLED Display**: Status display on 72x40 I2C SSD1306 OLEDs (as found on some ESP32-C3 mini boards)
+- **E-ink Display**: Router stats on the Xteink X4's 800x480 SSD1677 panel via the [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) (disabled by default, ESP32-C3 only — see `set_eink`)
 - **MQTT Home Assistant**: Publish telemetry and per-client stats to MQTT with HA auto-discovery
 - **MCP Bridge (AI-Ready)**: BETA - Control the router from AI assistants (Claude, etc.) via the Model Context Protocol
 - **mDNS**: The router is reachable as `esp32-nat-router.local` via mDNS/Bonjour — no need to look up the IP address.

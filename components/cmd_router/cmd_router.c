@@ -50,6 +50,7 @@ extern uint8_t web_ui_get_bind(void);
 extern void    web_ui_set_bind(uint8_t bind);
 #include "syslog_client.h"
 #include "oled_display.h"
+#include "eink_display.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 
@@ -101,6 +102,9 @@ static void register_syslog_cmd(void);
 #if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32S3)
 static void register_set_oled(void);
 static void register_set_oled_gpio(void);
+#endif
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+static void register_set_eink(void);
 #endif
 #if !CONFIG_ETH_UPLINK
 static void register_scan(void);
@@ -448,6 +452,9 @@ void register_router(void)
 #if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32S3)
     register_set_oled();
     register_set_oled_gpio();
+#endif
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+    register_set_eink();
 #endif
 }
 
@@ -3539,6 +3546,53 @@ static void register_set_oled_gpio(void)
 }
 
 #endif /* CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3 */
+
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+
+/* 'set_eink' command - enable/disable the Xteink X4 e-ink status display */
+static int set_eink_cmd(int argc, char **argv)
+{
+    if (argc < 2) {
+        bool enabled;
+        eink_display_get_config(&enabled);
+        printf("E-ink display: %s\n", enabled ? "enabled" : "disabled");
+        printf("\nUsage: set_eink <enable|disable>\n");
+        return 0;
+    }
+
+    const char *action = argv[1];
+    if (strcmp(action, "enable") == 0) {
+        eink_display_enable();
+        printf("E-ink display will be enabled after reboot.\n");
+        printf("Note: shares GPIO5/6 with the OLED display's default I2C pins -\n");
+        printf("      do not enable both on the same board.\n");
+    } else if (strcmp(action, "disable") == 0) {
+        eink_display_disable();
+        printf("E-ink display will be disabled after reboot.\n");
+    } else {
+        printf("Unknown action: %s\n", action);
+        printf("Usage: set_eink <enable|disable>\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static void register_set_eink(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "set_eink",
+        .help = "Enable or disable the Xteink X4 e-ink status display\n"
+                "  set_eink              - Show current status\n"
+                "  set_eink enable       - Enable e-ink display (after reboot)\n"
+                "  set_eink disable      - Disable e-ink display (after reboot)",
+        .hint = " <enable|disable>",
+        .func = &set_eink_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+#endif /* CONFIG_IDF_TARGET_ESP32C3 */
 
 #if !CONFIG_ETH_UPLINK
 /* Helper function to convert auth mode to string */

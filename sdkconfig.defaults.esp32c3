@@ -6,3 +6,15 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
 # Use built-in USB_SERIAL_JTAG for console output
 CONFIG_ESP_CONSOLE_UART_DEFAULT=n
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# eink_display (Xteink X4) pulls in arduino-esp32 as an ESP-IDF component to
+# build the vendored FreeInk SDK. These apply to every ESP32-C3 build (the
+# display itself only runs if 'set_eink enable' is used) since they are
+# compile-time settings arduino-esp32 requires:
+#  - Arduino's millis()/delay() assume a 1ms tick.
+#  - Some Arduino core paths use C++ exceptions.
+#  - Keep our own app_main() in control; Arduino must not run its own
+#    setup()/loop() (this is already the arduino-esp32 default).
+CONFIG_FREERTOS_HZ=1000
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+CONFIG_AUTOSTART_ARDUINO=n
