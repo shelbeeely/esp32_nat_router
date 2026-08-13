@@ -12,11 +12,20 @@ if(IDF_TARGET STREQUAL "esp32c3")
             "checked out. Run: git submodule update --init third_party/freeink-sdk")
     endif()
 
+    # BoardConfig.h derives FREEINK_DRIVER_UC8179 and FREEINK_DRIVER_UC8279_X4
+    # (the UltraChip-sibling controllers some X4 production runs ship instead
+    # of the original SSD1677 -- see BoardConfig.h's comment on runtime
+    # display-controller detection) from FREEINK_DEVICE_X4 unconditionally,
+    # so FreeInkDisplay::selectDriver() references their factory functions
+    # regardless of whether we ever expect to hit that runtime path. Link
+    # errors without these two alongside Ssd1677Driver.cpp.
     set(EINK_SRCS
         "eink_display.cpp"
         "${FREEINK_DISPLAY_DIR}/src/FreeInkDisplay.cpp"
         "${FREEINK_DISPLAY_DIR}/src/bus/EpdBus.cpp"
         "${FREEINK_DISPLAY_DIR}/src/driver/Ssd1677Driver.cpp"
+        "${FREEINK_DISPLAY_DIR}/src/driver/Uc8179Driver.cpp"
+        "${FREEINK_DISPLAY_DIR}/src/driver/Uc8279X4Driver.cpp"
     )
     set(EINK_PRIV_INCLUDE_DIRS
         "${FREEINK_DISPLAY_DIR}/include"
