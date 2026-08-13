@@ -22,3 +22,6 @@
 [submodule "third_party/microReticulum"]
 	path = third_party/microReticulum
 	url = https://github.com/attermann/microReticulum.git
+[submodule "third_party/SdFat"]
+	path = third_party/SdFat
+	url = https://github.com/greiman/SdFat.git

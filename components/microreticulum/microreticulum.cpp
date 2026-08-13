@@ -20,6 +20,7 @@
 #include "RouterUdpInterface.h"
 #include "EspNowInterface.h"
 #include "FatFsFileSystem.h"
+#include "SdCardFileSystem.h"
 #include "MeshUplink.h"
 
 #include "esp_log.h"
@@ -36,8 +37,14 @@ static const char *TAG = "microrns";
  * "/data" in main/esp32_nat_router.c, already used for console history) --
  * see FatFsFileSystem.h for why this isn't microStore's own UniversalFileSystem
  * adapter (that one wants a dedicated LittleFS partition on ESP32, not a path
- * prefix into whatever's already mounted). */
+ * prefix into whatever's already mounted). Used only as a fallback when no SD
+ * card is present -- much less room than the card, but Reticulum still runs. */
 #define RNS_STORAGE_PATH "/data/reticulum"
+
+/* Preferred storage: the X4's SD card, when present -- far more room for the
+ * path table and any future LXMF-style message history than the internal
+ * flash mount above. */
+#define RNS_SD_STORAGE_PATH "/reticulum"
 
 static RNS::Reticulum reticulum({RNS::Type::NONE});
 static RNS::Interface udp_interface(RNS::Type::NONE);
@@ -58,12 +65,23 @@ static void reticulum_task(void *arg)
 
     ESP_LOGI(TAG, "Starting Reticulum transport node...");
 
-    static reticulum_bridge::FatFsFileSystem filesystem(RNS_STORAGE_PATH);
-    microStore::FileSystem &fs = filesystem;
-    if (!fs.init()) {
-        ESP_LOGE(TAG, "Failed to initialize Reticulum storage at " RNS_STORAGE_PATH);
-        vTaskDelete(NULL);
-        return;
+    /* Prefer the SD card (far more room) and fall back to the internal flash
+     * mount if no card is present or it fails to mount. */
+    static reticulum_bridge::SdCardFileSystem sdFilesystem(RNS_SD_STORAGE_PATH);
+    static reticulum_bridge::FatFsFileSystem flashFilesystem(RNS_STORAGE_PATH);
+    microStore::FileSystem fs;
+
+    if (sdFilesystem.init()) {
+        ESP_LOGI(TAG, "Reticulum storage: SD card (" RNS_SD_STORAGE_PATH ")");
+        fs = sdFilesystem;
+    } else {
+        ESP_LOGW(TAG, "No SD card (or mount failed) - falling back to internal flash storage");
+        if (!flashFilesystem.init()) {
+            ESP_LOGE(TAG, "Failed to initialize Reticulum storage at " RNS_STORAGE_PATH);
+            vTaskDelete(NULL);
+            return;
+        }
+        fs = flashFilesystem;
     }
     RNS::Utilities::OS::register_filesystem(fs);
 

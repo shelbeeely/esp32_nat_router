@@ -55,11 +55,14 @@ extern "C" {
  *  - The UDP interface (RouterUdpInterface) assumes global broadcast
  *    (255.255.255.255) reaches the AP LAN; not verified against ESP-IDF's
  *    lwIP broadcast/SO_BROADCAST behavior on real hardware.
- *  - Storage rides the router's existing on-flash FATFS mount via a custom
- *    adapter (FatFsFileSystem) instead of microStore's built-in
- *    UniversalFileSystem, which wants its own LittleFS partition on ESP32 --
- *    see FatFsFileSystem.h for why. Not exercised against real Identity/path
- *    table persistence yet.
+ *  - Storage prefers the X4's SD card (SdCardFileSystem, via FreeInk's
+ *    SDCardManager/SdFat) and falls back to the router's on-flash FATFS mount
+ *    (FatFsFileSystem) if no card is present or it fails to mount -- neither
+ *    is microStore's own UniversalFileSystem adapter, which wants its own
+ *    LittleFS partition on ESP32; see FatFsFileSystem.h for why. Not
+ *    exercised against real Identity/path table persistence on either
+ *    backend yet, and the SD card shares its SPI bus with the eink display
+ *    (CS differs: display=21, card=12) -- untested that they coexist.
  *  - No web UI exposure yet -- console only (set_reticulum, mesh_uplink).
  *  - Storage requires the router's on-flash FATFS mount (main/esp32_nat_router.c's
  *    initialize_filesystem(), MOUNT_PATH "/data") to already be up, which only

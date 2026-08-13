@@ -15,13 +15,17 @@ if(IDF_TARGET STREQUAL "esp32c3")
     set(ARXCONTAINER_DIR     "${TP_DIR}/ArxContainer")
     set(ARXTYPETRAITS_DIR    "${TP_DIR}/ArxTypeTraits")
     set(DEBUGLOG_DIR         "${TP_DIR}/DebugLog")
+    set(SDFAT_DIR            "${TP_DIR}/SdFat")
+    set(FREEINK_SDK_DIR      "${TP_DIR}/freeink-sdk")
+    set(SDCARDMGR_DIR        "${FREEINK_SDK_DIR}/libs/hardware/SDCardManager")
+    set(FREEINK_BOARDCFG_DIR "${FREEINK_SDK_DIR}/libs/hardware/BoardConfig")
 
-    if(NOT EXISTS "${RNS_DIR}/src/microReticulum/Reticulum.h")
+    if(NOT EXISTS "${RNS_DIR}/src/microReticulum/Reticulum.h" OR NOT EXISTS "${SDFAT_DIR}/src/SdFat.h")
         message(FATAL_ERROR
             "microreticulum: one or more third_party submodules are missing. Run: "
             "git submodule update --init third_party/microReticulum third_party/microstore "
             "third_party/Crypto third_party/MsgPack third_party/ArxContainer "
-            "third_party/ArxTypeTraits third_party/DebugLog")
+            "third_party/ArxTypeTraits third_party/DebugLog third_party/SdFat")
     endif()
 
     # No CONFIGURE_DEPENDS: ESP-IDF evaluates component CMakeLists.txt files
@@ -38,6 +42,8 @@ if(IDF_TARGET STREQUAL "esp32c3")
         "RouterUdpInterface.cpp"
         "EspNowInterface.cpp"
         "FatFsFileSystem.cpp"
+        "SdCardFileSystem.cpp"
+        "${SDCARDMGR_DIR}/src/SDCardManager.cpp"
         "MeshUplink.cpp"
         "microreticulum.cpp"
     )
@@ -49,6 +55,9 @@ if(IDF_TARGET STREQUAL "esp32c3")
         "${ARXCONTAINER_DIR}"
         "${ARXTYPETRAITS_DIR}"
         "${DEBUGLOG_DIR}"
+        "${SDFAT_DIR}/src"
+        "${SDCARDMGR_DIR}/include"
+        "${FREEINK_BOARDCFG_DIR}/include"
     )
     set(MRNS_REQUIRES nvs_flash freertos log esp_wifi esp_netif lwip)
     set(MRNS_PRIV_REQUIRES espressif__arduino-esp32 bblanchon__arduinojson)
@@ -71,6 +80,11 @@ if(MRNS_SRCS)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
         RNS_USE_FS
         MSGPACK_USE_BOOST=OFF
+        FREEINK_DEVICE_X4=1
+        # Without this, SdFat mangles any non-ASCII long filename into an
+        # unopenable path -- see SDCardManager.h's own comment (its upstream
+        # PlatformIO build hook sets this the same way).
+        USE_UTF8_LONG_NAMES=1
     )
     target_compile_options(${COMPONENT_LIB} PRIVATE
         -Os
