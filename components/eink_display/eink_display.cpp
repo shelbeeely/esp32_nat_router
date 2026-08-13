@@ -27,6 +27,10 @@
  * for those. Button input comes from freeink_hw_poll_button_edges(), which
  * polls unconditionally regardless of freeink_hw's own battery/power-off
  * enable flag (see freeink_hw.h).
+ *
+ * Status screen is paged (LEFT/RIGHT cycles Overview/Clients/System, mirrors
+ * Meshtastic InkHUD's applet-tiling idea) rather than one screen with
+ * everything crammed on -- see StatusPage below.
  */
 
 #include "eink_display.h"
@@ -52,6 +56,8 @@
 #include "lwip/ip4_addr.h"
 #include "freeink_hw.h"
 #include "microreticulum.h"
+#include "router_config.h"
+#include "dhcp_reservations.h"
 
 /* Extern router globals (avoid including router_globals.h to prevent circular
  * deps, same approach as oled_display.c). These are defined in C files, so
@@ -141,28 +147,49 @@ static void format_ip(char *out, size_t out_sz, uint32_t ip)
     snprintf(out, out_sz, IPSTR, IP2STR(&addr));
 }
 
-static void render_status(freeink::FreeInkDisplay &display)
+enum StatusPage {
+    STATUS_PAGE_OVERVIEW,
+    STATUS_PAGE_CLIENTS,
+    STATUS_PAGE_SYSTEM,
+    STATUS_PAGE_COUNT,
+};
+
+static const char *kStatusPageTitles[STATUS_PAGE_COUNT] = {
+    "ESP32 NAT Router",
+    "Connected Clients",
+    "System",
+};
+
+/* Title + "page/count" indicator (font is fixed-width, so the indicator's
+ * pixel width is computable without a dry-run draw) + separator rule.
+ * Returns the y to start page content at. */
+static int draw_page_header(uint8_t *fb, int wbytes, int w, int h, const char *title, int page, int pageCount)
 {
-    uint8_t *fb = display.getFrameBuffer();
-    if (!fb)
-        return;
-
-    const int w = display.getDisplayWidth();
-    const int h = display.getDisplayHeight();
-    const int wbytes = display.getDisplayWidthBytes();
-
-    display.clearScreen(0xFF);
-
-    char line[64];
-    char ipbuf[20];
     const int margin = 24;
     int y = 24;
 
-    fb_draw_string(fb, wbytes, w, h, margin, y, "ESP32 NAT Router", 6);
+    fb_draw_string(fb, wbytes, w, h, margin, y, title, 6);
+
+    /* Sized for the compiler's worst-case %d width (a full int), not just the
+     * single-digit page counts this actually ever sees -- GCC's
+     * -Wformat-truncation can't know the runtime range is tiny. */
+    char pageStr[24];
+    snprintf(pageStr, sizeof(pageStr), "%d/%d", page + 1, pageCount);
+    const int indicatorScale = 3;
+    int indicatorW = (int)strlen(pageStr) * 6 * indicatorScale;
+    fb_draw_string(fb, wbytes, w, h, w - margin - indicatorW, y, pageStr, indicatorScale);
+
     y += 7 * 6 + 18;
     fb_draw_hline(fb, wbytes, w, h, margin, w - margin, y, 2);
     y += 26;
+    return y;
+}
 
+static void render_status_overview(uint8_t *fb, int wbytes, int w, int h, int y)
+{
+    char line[64];
+    char ipbuf[20];
+    const int margin = 24;
     const int scale = 3;
     const int line_h = 7 * scale + 16;
 
@@ -206,6 +233,47 @@ static void render_status(freeink::FreeInkDisplay &display)
              sta_bytes_sent / (1024.0 * 1024.0),
              sta_bytes_received / (1024.0 * 1024.0));
     fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
+}
+
+static void render_status_clients(uint8_t *fb, int wbytes, int w, int h, int y)
+{
+    const int margin = 24;
+    const int scale = 3;
+    const int line_h = 7 * scale + 14;
+
+    connected_client_t clients[AP_MAX_CONNECTIONS];
+    int n = get_connected_clients(clients, AP_MAX_CONNECTIONS);
+
+    if (n <= 0) {
+        fb_draw_string(fb, wbytes, w, h, margin, y, "No clients connected", scale);
+        return;
+    }
+
+    for (int i = 0; i < n; i++) {
+        char line[64];
+        char ipbuf[20];
+        const char *name = clients[i].name[0] ? clients[i].name : "(unknown)";
+        if (clients[i].has_ip)
+            format_ip(ipbuf, sizeof(ipbuf), clients[i].ip);
+        else
+            snprintf(ipbuf, sizeof(ipbuf), "no IP");
+        snprintf(line, sizeof(line), "%-16.16s %s", name, ipbuf);
+        fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
+        y += line_h;
+    }
+}
+
+static void render_status_system(uint8_t *fb, int wbytes, int w, int h, int y)
+{
+    char line[64];
+    const int margin = 24;
+    const int scale = 3;
+    const int line_h = 7 * scale + 16;
+
+    char uptimeBuf[32];
+    format_uptime(get_uptime_seconds(), uptimeBuf, sizeof(uptimeBuf));
+    snprintf(line, sizeof(line), "Uptime:  %s", uptimeBuf);
+    fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
     y += line_h;
 
     snprintf(line, sizeof(line), "Heap:    %lu KB free", (unsigned long)(esp_get_free_heap_size() / 1024));
@@ -217,8 +285,37 @@ static void render_status(freeink::FreeInkDisplay &display)
     if (hwEnabled) {
         snprintf(line, sizeof(line), "Battery: %u%%%s", (unsigned)freeink_hw_get_battery_percent(),
                  freeink_hw_is_charging() ? " (charging)" : "");
-        fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
+    } else {
+        snprintf(line, sizeof(line), "Battery: monitoring disabled");
     }
+    fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
+}
+
+static void render_status(freeink::FreeInkDisplay &display, int page)
+{
+    uint8_t *fb = display.getFrameBuffer();
+    if (!fb)
+        return;
+
+    const int w = display.getDisplayWidth();
+    const int h = display.getDisplayHeight();
+    const int wbytes = display.getDisplayWidthBytes();
+
+    display.clearScreen(0xFF);
+
+    int y = draw_page_header(fb, wbytes, w, h, kStatusPageTitles[page], page, STATUS_PAGE_COUNT);
+
+    switch (page) {
+        case STATUS_PAGE_OVERVIEW: render_status_overview(fb, wbytes, w, h, y); break;
+        case STATUS_PAGE_CLIENTS:  render_status_clients(fb, wbytes, w, h, y); break;
+        case STATUS_PAGE_SYSTEM:   render_status_system(fb, wbytes, w, h, y); break;
+        default: break;
+    }
+
+    const int margin = 24;
+    int footerY = h - 40;
+    fb_draw_hline(fb, wbytes, w, h, margin, w - margin, footerY - 14, 1);
+    fb_draw_string(fb, wbytes, w, h, margin, footerY, "LEFT/RIGHT page   CONFIRM menu", 2);
 }
 
 /* ---- On-device settings menu ---- */
@@ -379,6 +476,7 @@ static void eink_task(void *arg)
              display.getDisplayWidth(), display.getDisplayHeight());
 
     EinkMode mode = EINK_MODE_STATUS;
+    int statusPage = STATUS_PAGE_OVERVIEW;
     int menuSelected = 0;
     int statusTicks = 0;
     int menuIdleTicks = 0;
@@ -395,6 +493,13 @@ static void eink_task(void *arg)
                 mode = EINK_MODE_MENU;
                 menuSelected = 0;
                 menuIdleTicks = 0;
+                needRedraw = true;
+            } else if (edges & (FREEINK_HW_BTN_LEFT | FREEINK_HW_BTN_RIGHT)) {
+                if (edges & FREEINK_HW_BTN_RIGHT)
+                    statusPage = (statusPage + 1) % STATUS_PAGE_COUNT;
+                if (edges & FREEINK_HW_BTN_LEFT)
+                    statusPage = (statusPage - 1 + STATUS_PAGE_COUNT) % STATUS_PAGE_COUNT;
+                statusTicks = 0;
                 needRedraw = true;
             } else if (++statusTicks >= EINK_STATUS_REFRESH_TICKS) {
                 statusTicks = 0;
@@ -422,7 +527,7 @@ static void eink_task(void *arg)
 
         if (needRedraw || first) {
             if (mode == EINK_MODE_STATUS)
-                render_status(display);
+                render_status(display, statusPage);
             else
                 render_menu(display, menuSelected);
 

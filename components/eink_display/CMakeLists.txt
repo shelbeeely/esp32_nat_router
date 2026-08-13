@@ -31,6 +31,13 @@ if(IDF_TARGET STREQUAL "esp32c3")
         "${FREEINK_DISPLAY_DIR}/include"
         "${FREEINK_DISPLAY_DIR}/src"
         "${FREEINK_BOARDCFG_DIR}/include"
+        # Top-level project headers (router_config.h, dhcp_reservations.h) for
+        # the Clients/System status pages -- same path cmd_router/dhcpserver
+        # already add themselves. The functions they declare (get_connected_
+        # clients(), get_uptime_seconds()) are defined in the main component;
+        # linking to them from here mirrors the extern-declared main globals
+        # (ap_connect, etc.) already used below, just via the real header.
+        "${CMAKE_SOURCE_DIR}/include"
     )
     set(EINK_REQUIRES nvs_flash freertos log driver esp_wifi esp_netif lwip)
     # microreticulum: the on-device settings menu toggles Reticulum on/off.
