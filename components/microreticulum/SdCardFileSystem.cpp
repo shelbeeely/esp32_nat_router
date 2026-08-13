@@ -52,11 +52,13 @@ microStore::File SdCardFileSystemImpl::open(const char *path, microStore::File::
             break;
     }
 
-    FsFile file = SdMan.open(full.c_str(), flags);
-    if (!file.isOpen())
+    SdCardFileImpl *impl = new SdCardFileImpl(full.c_str(), flags, path ? path : "");
+    if (!impl->isValid()) {
+        delete impl;
         return microStore::File();
+    }
 
-    return microStore::File(new SdCardFileImpl(file, path ? path : ""));
+    return microStore::File(impl);
 }
 
 bool SdCardFileSystemImpl::exists(const char *path) {

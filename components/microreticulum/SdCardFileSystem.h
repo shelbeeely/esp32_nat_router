@@ -13,18 +13,27 @@
  * component also compiling it in.
  */
 
+/* <string> must come before the microStore headers below -- they use
+ * std::string (e.g. debugString()) without including <string> themselves. */
+#include <string>
+
 #include <microStore/File.h>
 #include <microStore/FileSystem.h>
 
 #include <SDCardManager.h>
 
-#include <string>
-
 namespace reticulum_bridge {
 
 class SdCardFileImpl : public microStore::FileImpl {
 public:
-    explicit SdCardFileImpl(FsFile file, std::string name) : _file(file), _name(std::move(name)) {}
+    /* Constructs (and opens) _file in place via the mem-initializer-list --
+     * SdFat's FsFile has both its copy and move constructors deleted (file
+     * handles are non-transferable), so this can never take an already-open
+     * FsFile by value/rvalue. C++17 guaranteed copy elision means the
+     * SdMan.open(...) prvalue is materialized directly into _file, no
+     * copy/move ctor involved. */
+    SdCardFileImpl(const char *path, oflag_t oflag, std::string name)
+        : _file(SdMan.open(path, oflag)), _name(std::move(name)) {}
     virtual ~SdCardFileImpl() { close(); }
 
     virtual const char *name() const override { return _name.c_str(); }
