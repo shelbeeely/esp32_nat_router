@@ -78,14 +78,17 @@ if(MRNS_SRCS)
         -Wno-missing-field-initializers
         -Wno-format
         -Wno-unused-parameter
-        # Below: this toolchain's -Werror is stricter than what
-        # microReticulum/microStore were developed against upstream. All of
-        # these are inside vendored third-party source (Link.cpp's switch
-        # over RNS::Type::Packet::context_types and shift/mask expression,
-        # FileStore.h's member-initializer-list order), not this component's
-        # own bridge code -- relaxed here rather than patching the submodule.
-        -Wno-error=switch
-        -Wno-error=parentheses
-        -Wno-error=reorder
+        # This component's sources are almost entirely vendored third-party
+        # code (microReticulum, microStore, Crypto, MsgPack, ArxContainer,
+        # ArxTypeTraits, DebugLog) developed against a less strict warning
+        # set than this toolchain's -Werror=all default -- the first real
+        # build here surfaced -Werror=switch/parentheses/reorder/
+        # class-memaccess in Link.cpp, FileStore.h, and Memory.cpp alone,
+        # none of them in this component's own ~5 bridge files (RouterUdp/
+        # EspNow/FatFsFileSystem/MeshUplink/microreticulum.cpp). Downgrading
+        # -Werror to warnings for this component only, rather than either
+        # patching the submodules or chasing each warning category
+        # individually as more of the vendored source gets exercised.
+        -Wno-error
     )
 endif()
