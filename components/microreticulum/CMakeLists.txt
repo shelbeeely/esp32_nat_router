@@ -78,5 +78,14 @@ if(MRNS_SRCS)
         -Wno-missing-field-initializers
         -Wno-format
         -Wno-unused-parameter
+        # Below: this toolchain's -Werror is stricter than what
+        # microReticulum/microStore were developed against upstream. All of
+        # these are inside vendored third-party source (Link.cpp's switch
+        # over RNS::Type::Packet::context_types and shift/mask expression,
+        # FileStore.h's member-initializer-list order), not this component's
+        # own bridge code -- relaxed here rather than patching the submodule.
+        -Wno-error=switch
+        -Wno-error=parentheses
+        -Wno-error=reorder
     )
 endif()
