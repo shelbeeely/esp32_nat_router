@@ -12,6 +12,11 @@
  * oled_display's default I2C pins -- never enable both on the same board.
  */
 
+/* Needed for CONFIG_IDF_TARGET_ESP32C3 below -- don't rely on some other
+ * header (transitively) pulling this in first. oled_display.h gets it by
+ * accident via esp_err.h; this doesn't include that, so it's explicit here. */
+#include "sdkconfig.h"
+
 #include <stdbool.h>
 
 #ifdef __cplusplus

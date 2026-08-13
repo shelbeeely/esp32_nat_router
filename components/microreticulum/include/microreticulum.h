@@ -29,6 +29,10 @@
  * exercised by an upstream example.
  */
 
+/* Needed for CONFIG_IDF_TARGET_ESP32C3 below -- see eink_display.h's copy of
+ * this comment for why it can't be left to transitive inclusion. */
+#include "sdkconfig.h"
+
 #include <stdbool.h>
 
 #ifdef __cplusplus

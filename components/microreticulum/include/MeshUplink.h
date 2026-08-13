@@ -21,6 +21,10 @@
  * that increment's gateway selection/failover would consume.
  */
 
+/* Needed for CONFIG_IDF_TARGET_ESP32C3 below -- see eink_display.h's copy of
+ * this comment for why it can't be left to transitive inclusion. */
+#include "sdkconfig.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
