@@ -35,10 +35,21 @@ if(IDF_TARGET STREQUAL "esp32c3")
     # deliberate re-vendor anyway (which already means re-running cmake).
     file(GLOB_RECURSE RNS_SRCS "${RNS_DIR}/src/microReticulum/*.cpp")
     file(GLOB CRYPTO_SRCS "${CRYPTO_DIR}/*.cpp")
+    # All of SdFat's own .cpp files, not just the ones our SDCardFileSystem
+    # adapter calls directly -- FatVolume/ExFatVolume/FsVolume/FatFile/
+    # ExFatFile/etc. implementations live in these and were previously only
+    # pulled in via the include dir, leaving every SdFat symbol we actually
+    # call an undefined reference at link time. The handful of platform-
+    # specific SPI/SDIO driver files under SdCard/ (Due, STM32, Teensy,
+    # RP2040) are each self-guarded by their own platform macro (e.g.
+    # ARDUINO_SAM_DUE, STM32_CORE_VERSION, CORE_TEENSY) and compile to empty
+    # translation units here, so including them all is safe.
+    file(GLOB_RECURSE SDFAT_SRCS "${SDFAT_DIR}/src/*.cpp")
 
     set(MRNS_SRCS
         ${RNS_SRCS}
         ${CRYPTO_SRCS}
+        ${SDFAT_SRCS}
         "RouterUdpInterface.cpp"
         "EspNowInterface.cpp"
         "FatFsFileSystem.cpp"
