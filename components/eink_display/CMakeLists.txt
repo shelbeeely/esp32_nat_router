@@ -33,7 +33,8 @@ if(IDF_TARGET STREQUAL "esp32c3")
         "${FREEINK_BOARDCFG_DIR}/include"
     )
     set(EINK_REQUIRES nvs_flash freertos log driver esp_wifi esp_netif lwip)
-    set(EINK_PRIV_REQUIRES espressif__arduino-esp32 freeink_hw)
+    # microreticulum: the on-device settings menu toggles Reticulum on/off.
+    set(EINK_PRIV_REQUIRES espressif__arduino-esp32 freeink_hw microreticulum)
 else()
     set(EINK_SRCS "")
     set(EINK_PRIV_INCLUDE_DIRS "")

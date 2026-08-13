@@ -16,6 +16,17 @@
  * 1bpp framebuffer it owns (MSB-first, row-major, 1=white/0=black; see
  * FreeInkDisplay::blitImage), the same approach oled_display uses for the
  * SSD1306's framebuffer.
+ *
+ * On-device settings menu: pressing CONFIRM on the status screen switches to
+ * a button-driven menu (UP/DOWN to move, CONFIRM to toggle, BACK to exit),
+ * scoped for now to the boolean features that already have a plain enable/
+ * disable C API and an existing "changes apply after reboot" convention
+ * (eink display itself, Reticulum, battery/power monitoring), plus a reboot
+ * action. Free-text settings (WiFi SSID/password, static IP, etc.) stay on
+ * the web UI/console -- a 6-button on-screen keyboard isn't worth building
+ * for those. Button input comes from freeink_hw_poll_button_edges(), which
+ * polls unconditionally regardless of freeink_hw's own battery/power-off
+ * enable flag (see freeink_hw.h).
  */
 
 #include "eink_display.h"
@@ -40,6 +51,7 @@
 #include "esp_netif_ip_addr.h"
 #include "lwip/ip4_addr.h"
 #include "freeink_hw.h"
+#include "microreticulum.h"
 
 /* Extern router globals (avoid including router_globals.h to prevent circular
  * deps, same approach as oled_display.c). These are defined in C files, so
@@ -209,7 +221,137 @@ static void render_status(freeink::FreeInkDisplay &display)
     }
 }
 
+/* ---- On-device settings menu ---- */
+
+enum MenuAction {
+    MENU_TOGGLE_EINK,
+    MENU_TOGGLE_RETICULUM,
+    MENU_TOGGLE_FREEINK_HW,
+    MENU_REBOOT,
+};
+
+struct MenuItem {
+    const char *label;
+    MenuAction action;
+    bool isToggle;
+};
+
+static const MenuItem kMenuItems[] = {
+    { "E-Ink Display",      MENU_TOGGLE_EINK,       true },
+    { "Reticulum Mesh",     MENU_TOGGLE_RETICULUM,  true },
+    { "Battery/Power Mon.", MENU_TOGGLE_FREEINK_HW, true },
+    { "Reboot Now",         MENU_REBOOT,            false },
+};
+static const int kMenuItemCount = sizeof(kMenuItems) / sizeof(kMenuItems[0]);
+
+static void render_menu(freeink::FreeInkDisplay &display, int selected)
+{
+    uint8_t *fb = display.getFrameBuffer();
+    if (!fb)
+        return;
+
+    const int w = display.getDisplayWidth();
+    const int h = display.getDisplayHeight();
+    const int wbytes = display.getDisplayWidthBytes();
+
+    display.clearScreen(0xFF);
+
+    const int margin = 24;
+    int y = 24;
+
+    fb_draw_string(fb, wbytes, w, h, margin, y, "Settings", 6);
+    y += 7 * 6 + 18;
+    fb_draw_hline(fb, wbytes, w, h, margin, w - margin, y, 2);
+    y += 26;
+
+    const int scale = 3;
+    const int line_h = 7 * scale + 16;
+
+    bool einkEn = false, rnsEn = false, fkhwEn = false;
+    eink_display_get_config(&einkEn);
+    microreticulum_get_config(&rnsEn);
+    freeink_hw_get_config(&fkhwEn);
+
+    char line[64];
+    for (int i = 0; i < kMenuItemCount; i++) {
+        const char *cursor = (i == selected) ? "> " : "  ";
+        if (kMenuItems[i].isToggle) {
+            bool val = false;
+            switch (kMenuItems[i].action) {
+                case MENU_TOGGLE_EINK:       val = einkEn; break;
+                case MENU_TOGGLE_RETICULUM:  val = rnsEn; break;
+                case MENU_TOGGLE_FREEINK_HW: val = fkhwEn; break;
+                default: break;
+            }
+            snprintf(line, sizeof(line), "%s%-18s [%s]", cursor, kMenuItems[i].label, val ? "ON" : "OFF");
+        } else {
+            snprintf(line, sizeof(line), "%s%s", cursor, kMenuItems[i].label);
+        }
+        fb_draw_string(fb, wbytes, w, h, margin, y, line, scale);
+        y += line_h;
+    }
+
+    y += line_h / 2;
+    fb_draw_hline(fb, wbytes, w, h, margin, w - margin, y, 1);
+    y += 20;
+    fb_draw_string(fb, wbytes, w, h, margin, y, "UP/DOWN move   CONFIRM select   BACK exit", 2);
+    y += 7 * 2 + 12;
+    fb_draw_string(fb, wbytes, w, h, margin, y, "Toggles take effect after reboot.", 2);
+}
+
+/* Applies edges to menu navigation/selection. Returns true if the menu
+ * should close (BACK pressed at the top level -- there are no submenus yet
+ * to back out of one level at a time). */
+static bool handle_menu_edges(uint8_t edges, int &selected)
+{
+    if (edges & FREEINK_HW_BTN_BACK)
+        return true;
+
+    if (edges & FREEINK_HW_BTN_UP)
+        selected = (selected - 1 + kMenuItemCount) % kMenuItemCount;
+    if (edges & FREEINK_HW_BTN_DOWN)
+        selected = (selected + 1) % kMenuItemCount;
+
+    if (edges & FREEINK_HW_BTN_CONFIRM) {
+        switch (kMenuItems[selected].action) {
+            case MENU_TOGGLE_EINK: {
+                bool en = false;
+                eink_display_get_config(&en);
+                en ? eink_display_disable() : eink_display_enable();
+                break;
+            }
+            case MENU_TOGGLE_RETICULUM: {
+                bool en = false;
+                microreticulum_get_config(&en);
+                en ? microreticulum_disable() : microreticulum_enable();
+                break;
+            }
+            case MENU_TOGGLE_FREEINK_HW: {
+                bool en = false;
+                freeink_hw_get_config(&en);
+                en ? freeink_hw_disable() : freeink_hw_enable();
+                break;
+            }
+            case MENU_REBOOT:
+                esp_restart();
+                break;
+        }
+    }
+
+    return false;
+}
+
 /* ---- FreeRTOS task ---- */
+
+/* Buttons are polled every tick regardless of display mode (status vs menu)
+ * so pressing CONFIRM on the status screen is picked up promptly; the
+ * e-paper itself is only ever repainted when something actually changed
+ * (periodic status refresh, or a menu edge), not on every tick. */
+#define EINK_TICK_MS                 100
+#define EINK_STATUS_REFRESH_TICKS    (EINK_UPDATE_INTERVAL_MS / EINK_TICK_MS)
+#define EINK_MENU_IDLE_TIMEOUT_TICKS (20000 / EINK_TICK_MS) /* back to status after 20s idle */
+
+enum EinkMode { EINK_MODE_STATUS, EINK_MODE_MENU };
 
 static void eink_task(void *arg)
 {
@@ -236,30 +378,68 @@ static void eink_task(void *arg)
     ESP_LOGI(TAG, "Xteink X4 e-ink display running (%dx%d)",
              display.getDisplayWidth(), display.getDisplayHeight());
 
+    EinkMode mode = EINK_MODE_STATUS;
+    int menuSelected = 0;
+    int statusTicks = 0;
+    int menuIdleTicks = 0;
     int resync_counter = 0;
     int refresh_counter = 0;
+    bool needRedraw = true;
     bool first = true;
 
     while (true) {
-        if (++resync_counter >= EINK_RESYNC_EVERY) {
-            resync_connect_count();
-            resync_counter = 0;
+        uint8_t edges = freeink_hw_poll_button_edges();
+
+        if (mode == EINK_MODE_STATUS) {
+            if (edges & FREEINK_HW_BTN_CONFIRM) {
+                mode = EINK_MODE_MENU;
+                menuSelected = 0;
+                menuIdleTicks = 0;
+                needRedraw = true;
+            } else if (++statusTicks >= EINK_STATUS_REFRESH_TICKS) {
+                statusTicks = 0;
+                if (++resync_counter >= EINK_RESYNC_EVERY) {
+                    resync_connect_count();
+                    resync_counter = 0;
+                }
+                needRedraw = true;
+            }
+        } else { /* EINK_MODE_MENU */
+            if (edges) {
+                menuIdleTicks = 0;
+                bool exitMenu = handle_menu_edges(edges, menuSelected);
+                needRedraw = true;
+                if (exitMenu) {
+                    mode = EINK_MODE_STATUS;
+                    statusTicks = 0;
+                }
+            } else if (++menuIdleTicks >= EINK_MENU_IDLE_TIMEOUT_TICKS) {
+                mode = EINK_MODE_STATUS;
+                statusTicks = 0;
+                needRedraw = true;
+            }
         }
 
-        render_status(display);
+        if (needRedraw || first) {
+            if (mode == EINK_MODE_STATUS)
+                render_status(display);
+            else
+                render_menu(display, menuSelected);
 
-        freeink::FreeInkDisplay::RefreshMode mode = freeink::FreeInkDisplay::FAST_REFRESH;
-        if (first) {
-            mode = freeink::FreeInkDisplay::FULL_REFRESH;
-            first = false;
-        } else if (++refresh_counter >= EINK_HALF_REFRESH_EVERY) {
-            mode = freeink::FreeInkDisplay::HALF_REFRESH;
-            refresh_counter = 0;
+            freeink::FreeInkDisplay::RefreshMode refresh = freeink::FreeInkDisplay::FAST_REFRESH;
+            if (first) {
+                refresh = freeink::FreeInkDisplay::FULL_REFRESH;
+                first = false;
+            } else if (++refresh_counter >= EINK_HALF_REFRESH_EVERY) {
+                refresh = freeink::FreeInkDisplay::HALF_REFRESH;
+                refresh_counter = 0;
+            }
+
+            display.displayBuffer(refresh);
+            needRedraw = false;
         }
 
-        display.displayBuffer(mode);
-
-        vTaskDelay(pdMS_TO_TICKS(EINK_UPDATE_INTERVAL_MS));
+        vTaskDelay(pdMS_TO_TICKS(EINK_TICK_MS));
     }
 }
 

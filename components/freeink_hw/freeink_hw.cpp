@@ -27,6 +27,13 @@ static const char *TAG = "freeink_hw";
 static volatile uint16_t s_batteryPercent = 0;
 static volatile bool s_charging = false;
 
+/* Nav button press edges accumulated by freeink_hw_task, consumed by
+ * freeink_hw_poll_button_edges(). ESP32-C3 is single-core, but FreeRTOS still
+ * preempts between tasks, so this needs a critical section rather than being
+ * left as a plain read-modify-write. */
+static portMUX_TYPE s_edgeMux = portMUX_INITIALIZER_UNLOCKED;
+static volatile uint8_t s_pendingEdges = 0;
+
 static void freeink_hw_task(void *arg)
 {
     (void)arg;
@@ -37,30 +44,53 @@ static void freeink_hw_task(void *arg)
     InputManager input;
     input.begin();
 
+    /* Battery sampling and the power-button hold-to-sleep gesture are the
+     * only things this flag gates -- read once here, matching this
+     * firmware's existing "changes apply after reboot" convention for
+     * NVS-persisted toggles. Button polling itself always runs. */
+    bool hwEnabled = false;
+    freeink_hw_get_config(&hwEnabled);
+
     BatteryMonitor battery;
 
-    ESP_LOGI(TAG, "Input/battery polling running");
+    ESP_LOGI(TAG, "Button polling running (battery/power-off: %s)",
+             hwEnabled ? "enabled" : "disabled");
 
     int sampleCounter = 0;
 
     while (true) {
         input.update();
 
-        if (input.isPowerButtonPressed() &&
-            input.getPowerButtonHeldTime() >= POWER_OFF_HOLD_MS) {
-            ESP_LOGW(TAG, "Power button held %dms - shutting down", POWER_OFF_HOLD_MS);
-            /* Does not return: waits for release, arms wake-on-power-button,
-             * and enters deep sleep. */
-            freeink::PowerManager::deepSleepUntilPowerButton();
+        uint8_t edges = 0;
+        if (input.wasPressed(InputManager::BTN_BACK))    edges |= FREEINK_HW_BTN_BACK;
+        if (input.wasPressed(InputManager::BTN_CONFIRM)) edges |= FREEINK_HW_BTN_CONFIRM;
+        if (input.wasPressed(InputManager::BTN_LEFT))    edges |= FREEINK_HW_BTN_LEFT;
+        if (input.wasPressed(InputManager::BTN_RIGHT))   edges |= FREEINK_HW_BTN_RIGHT;
+        if (input.wasPressed(InputManager::BTN_UP))      edges |= FREEINK_HW_BTN_UP;
+        if (input.wasPressed(InputManager::BTN_DOWN))    edges |= FREEINK_HW_BTN_DOWN;
+        if (edges) {
+            portENTER_CRITICAL(&s_edgeMux);
+            s_pendingEdges |= edges;
+            portEXIT_CRITICAL(&s_edgeMux);
         }
 
-        if (++sampleCounter >= BATTERY_SAMPLE_EVERY) {
-            sampleCounter = 0;
-            uint16_t pct;
-            if (battery.readPercentageChecked(pct)) {
-                s_batteryPercent = pct;
+        if (hwEnabled) {
+            if (input.isPowerButtonPressed() &&
+                input.getPowerButtonHeldTime() >= POWER_OFF_HOLD_MS) {
+                ESP_LOGW(TAG, "Power button held %dms - shutting down", POWER_OFF_HOLD_MS);
+                /* Does not return: waits for release, arms wake-on-power-button,
+                 * and enters deep sleep. */
+                freeink::PowerManager::deepSleepUntilPowerButton();
             }
-            s_charging = battery.isCharging();
+
+            if (++sampleCounter >= BATTERY_SAMPLE_EVERY) {
+                sampleCounter = 0;
+                uint16_t pct;
+                if (battery.readPercentageChecked(pct)) {
+                    s_batteryPercent = pct;
+                }
+                s_charging = battery.isCharging();
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
@@ -69,14 +99,8 @@ static void freeink_hw_task(void *arg)
 
 void freeink_hw_init(void)
 {
-    bool enabled = false;
-    freeink_hw_get_config(&enabled);
-
-    if (!enabled) {
-        ESP_LOGI(TAG, "FreeInk hardware support disabled");
-        return;
-    }
-
+    /* Unconditional: see the header comment on why button polling can't be
+     * behind the fkhw_en opt-in flag. */
     xTaskCreate(freeink_hw_task, "freeink_hw", 4096, NULL, 2, NULL);
 }
 
@@ -124,6 +148,15 @@ uint16_t freeink_hw_get_battery_percent(void)
 bool freeink_hw_is_charging(void)
 {
     return s_charging;
+}
+
+uint8_t freeink_hw_poll_button_edges(void)
+{
+    portENTER_CRITICAL(&s_edgeMux);
+    uint8_t edges = s_pendingEdges;
+    s_pendingEdges = 0;
+    portEXIT_CRITICAL(&s_edgeMux);
+    return edges;
 }
 
 #endif /* CONFIG_IDF_TARGET_ESP32C3 */
