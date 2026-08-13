@@ -2,8 +2,8 @@ dependencies:
   espressif/arduino-esp32:
     version: "^3.3.11"
     rules:
-      - if: "idf_target == \"esp32c3\""
+      - if: "target == esp32c3"
   bblanchon/arduinojson:
     version: "^7.4.2"
     rules:
-      - if: "idf_target == \"esp32c3\""
+      - if: "target == esp32c3"

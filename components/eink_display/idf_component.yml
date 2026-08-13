@@ -2,4 +2,4 @@ dependencies:
   espressif/arduino-esp32:
     version: "^3.3.11"
     rules:
-      - if: "idf_target == \"esp32c3\""
+      - if: "target == esp32c3"

@@ -24,8 +24,13 @@ if(IDF_TARGET STREQUAL "esp32c3")
             "third_party/ArxTypeTraits third_party/DebugLog")
     endif()
 
-    file(GLOB_RECURSE RNS_SRCS CONFIGURE_DEPENDS "${RNS_DIR}/src/microReticulum/*.cpp")
-    file(GLOB CRYPTO_SRCS CONFIGURE_DEPENDS "${CRYPTO_DIR}/*.cpp")
+    # No CONFIGURE_DEPENDS: ESP-IDF evaluates component CMakeLists.txt files
+    # once in a restricted "script mode" pass (just to gather REQUIRES) before
+    # the real configure pass, and CONFIGURE_DEPENDS is invalid there. These
+    # are pinned submodules, so the file list won't change without a
+    # deliberate re-vendor anyway (which already means re-running cmake).
+    file(GLOB_RECURSE RNS_SRCS "${RNS_DIR}/src/microReticulum/*.cpp")
+    file(GLOB CRYPTO_SRCS "${CRYPTO_DIR}/*.cpp")
 
     set(MRNS_SRCS
         ${RNS_SRCS}
@@ -46,7 +51,7 @@ if(IDF_TARGET STREQUAL "esp32c3")
         "${DEBUGLOG_DIR}"
     )
     set(MRNS_REQUIRES nvs_flash freertos log esp_wifi esp_netif lwip)
-    set(MRNS_PRIV_REQUIRES arduino bblanchon__arduinojson)
+    set(MRNS_PRIV_REQUIRES espressif__arduino-esp32 bblanchon__arduinojson)
 else()
     set(MRNS_SRCS "")
     set(MRNS_PRIV_INCLUDE_DIRS "")
