@@ -1,0 +1,90 @@
+name: Build firmware and deploy web installer
+
+# Builds every target via build_all_targets.sh inside the official ESP-IDF
+# container -- this is the first real compile check anything in this repo's
+# recent history gets (several components were written without access to a
+# toolchain). On push to the default branch, a second job assembles the
+# GitHub Pages install site (index.html + manifest_*.json + the freshly
+# built firmware_*/ binaries, NOT the stale ones checked into git) and
+# deploys it -- no binaries are committed back to the repo.
+#
+# One-time manual step this workflow cannot do for you: in the repo's
+# Settings -> Pages, set Source to "GitHub Actions". Until that's done the
+# deploy job will fail with a permissions/not-enabled error even though the
+# build itself succeeds.
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build all targets
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v5.5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build all targets
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          ./build_all_targets.sh
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-binaries
+          path: firmware_*/
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-pages:
+    name: Deploy web installer to GitHub Pages
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download freshly built firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-binaries
+          path: firmware-fresh
+
+      - name: Assemble install site
+        run: |
+          set -e
+          mkdir -p site
+          cp index.html manifest_esp32_wifi.json manifest_wt32_eth01.json site/
+          for d in firmware-fresh/*/; do
+            target_dir="$(basename "$d")"
+            mkdir -p "site/$target_dir"
+            cp "$d"*.bin "$d"build_info.txt "site/$target_dir/" 2>/dev/null || true
+          done
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

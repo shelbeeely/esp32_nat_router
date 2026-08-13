@@ -306,7 +306,11 @@ void eink_display_get_config(bool *enabled)
     nvs_handle_t nvs;
     int32_t val;
 
-    *enabled = false;
+    /* Enabled by default -- this is the X4's own screen, not an optional
+     * add-on peripheral like the OLED, so it should just work out of the
+     * box. 'set_eink disable' opts out and persists that choice; absence of
+     * the NVS key (first boot, or after nvs_flash_erase) means "on". */
+    *enabled = true;
 
     if (nvs_open(PARAM_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK)
         return;

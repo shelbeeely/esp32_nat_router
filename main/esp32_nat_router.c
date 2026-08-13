@@ -1568,7 +1568,7 @@ void app_main(void)
     // Initialize OLED display (ESP32-S3 defaults to enabled on GPIO17/18)
     oled_display_init();
 
-    // Initialize Xteink X4 e-ink status display (ESP32-C3, disabled by default)
+    // Initialize Xteink X4 e-ink status display (ESP32-C3, enabled by default)
     eink_display_init();
 
     // Initialize Xteink X4 buttons/battery/power management (ESP32-C3, disabled by default)

@@ -37,7 +37,7 @@ Starting from this code base I started several spin-off projects with slightly d
 - **Remote Console**: Network-accessible CLI via TCP (password protected, per-interface binding)
 - **LED Status Indicator**: Visual feedback via plain GPIO LED or addressable LED strip (WS2812/SK6812) with color-coded status
 - **OLED Display**: Status display on 72x40 I2C SSD1306 OLEDs (as found on some ESP32-C3 mini boards)
-- **E-ink Display**: Router stats on the Xteink X4's 800x480 SSD1677 panel via the [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) (disabled by default, ESP32-C3 only — see `set_eink`)
+- **E-ink Display**: Router stats on the Xteink X4's 800x480 SSD1677 panel via the [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) (enabled by default, ESP32-C3 only — see `set_eink`)
 - **MQTT Home Assistant**: Publish telemetry and per-client stats to MQTT with HA auto-discovery
 - **MCP Bridge (AI-Ready)**: BETA - Control the router from AI assistants (Claude, etc.) via the Model Context Protocol
 - **mDNS**: The router is reachable as `esp32-nat-router.local` via mDNS/Bonjour — no need to look up the IP address.
@@ -62,9 +62,13 @@ After first boot the ESP32 NAT Router will offer a WiFi network with an open AP 
 
 Flash directly from your browser — no tools or command line required:
 
-**[Open Web Installer](https://martin-ger.github.io/esp32_nat_router/)**
+**[Open Web Installer](https://shelbeeely.github.io/esp32_nat_router/)** (this fork, built automatically by CI from the latest source — see [Building](#building-from-source) below)
 
 Requires a browser with Web Serial API. Select your firmware variant (WiFi or Ethernet) and click "Connect & Install".
+
+The upstream project's own installer (without this fork's Xteink X4/e-ink/Reticulum additions) is at [martin-ger.github.io/esp32_nat_router](https://martin-ger.github.io/esp32_nat_router/).
+
+<sub>Maintainers: the installer above goes live once this repo's Settings → Pages → Source is set to "GitHub Actions" (one-time, can't be done from a workflow file) — `.github/workflows/build-and-pages.yml` handles the rest on every push to the default branch.</sub>
 
 ### esptool (Command Line)
 

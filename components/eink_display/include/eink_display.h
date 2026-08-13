@@ -22,7 +22,9 @@ extern "C" {
 
 /**
  * @brief Initialize the e-ink display from NVS config.
- * If enabled, starts the display update task. Disabled by default.
+ * If enabled, starts the display update task. Enabled by default (unlike the
+ * OLED, this is the X4's own screen, not an optional peripheral) --
+ * 'set_eink disable' opts out.
  */
 void eink_display_init(void);
 
