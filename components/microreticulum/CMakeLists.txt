@@ -33,6 +33,7 @@ if(IDF_TARGET STREQUAL "esp32c3")
         "RouterUdpInterface.cpp"
         "EspNowInterface.cpp"
         "FatFsFileSystem.cpp"
+        "MeshUplink.cpp"
         "microreticulum.cpp"
     )
     set(MRNS_PRIV_INCLUDE_DIRS

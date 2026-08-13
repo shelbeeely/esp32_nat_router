@@ -52,6 +52,8 @@ extern void    web_ui_set_bind(uint8_t bind);
 #include "oled_display.h"
 #include "eink_display.h"
 #include "freeink_hw.h"
+#include "MeshUplink.h"
+#include "microreticulum.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 
@@ -108,6 +110,8 @@ static void register_set_oled_gpio(void);
 static void register_set_eink(void);
 static void register_set_freeink_hw(void);
 static void register_battery(void);
+static void register_set_reticulum(void);
+static void register_mesh_uplink(void);
 #endif
 #if !CONFIG_ETH_UPLINK
 static void register_scan(void);
@@ -460,6 +464,8 @@ void register_router(void)
     register_set_eink();
     register_set_freeink_hw();
     register_battery();
+    register_set_reticulum();
+    register_mesh_uplink();
 #endif
 }
 
@@ -3659,6 +3665,97 @@ static void register_battery(void)
         .command = "battery",
         .help = "Show Xteink X4 battery status",
         .func = &battery_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+/* 'mesh_uplink' command - show this router's and peers' mesh uplink status */
+static int mesh_uplink_cmd(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    char selfHash[MESH_UPLINK_HASH_HEX_LEN];
+    bool selfUplink;
+    mesh_uplink_get_self(selfHash, sizeof(selfHash), &selfUplink);
+    printf("This router: %s (uplink: %s)\n",
+           selfHash[0] ? selfHash : "not started - run 'set_reticulum enable' and reboot",
+           selfUplink ? "yes" : "no");
+
+    mesh_uplink_gateway_t gateways[MESH_UPLINK_MAX_GATEWAYS];
+    int count = mesh_uplink_list_gateways(gateways, MESH_UPLINK_MAX_GATEWAYS);
+    if (count == 0) {
+        printf("No mesh peers heard from yet.\n");
+        return 0;
+    }
+
+    printf("\n%-33s %-8s %-6s %-6s %s\n", "Destination", "Uplink", "Hops", "Age", "Label");
+    for (int i = 0; i < count; i++) {
+        char hopsStr[8];
+        if (gateways[i].hops == 255) {
+            snprintf(hopsStr, sizeof(hopsStr), "?");
+        } else {
+            snprintf(hopsStr, sizeof(hopsStr), "%u", (unsigned)gateways[i].hops);
+        }
+        printf("%-33s %-8s %-6s %-6us %s\n",
+               gateways[i].hash_hex,
+               gateways[i].uplink_available ? "yes" : "no",
+               hopsStr,
+               (unsigned)gateways[i].age_secs,
+               gateways[i].label);
+    }
+    return 0;
+}
+
+/* 'set_reticulum' command - enable/disable the Reticulum transport node */
+static int set_reticulum_cmd(int argc, char **argv)
+{
+    if (argc < 2) {
+        bool enabled;
+        microreticulum_get_config(&enabled);
+        printf("Reticulum transport node: %s\n", enabled ? "enabled" : "disabled");
+        printf("\nUsage: set_reticulum <enable|disable>\n");
+        return 0;
+    }
+
+    const char *action = argv[1];
+    if (strcmp(action, "enable") == 0) {
+        microreticulum_enable();
+        printf("Reticulum will be enabled after reboot.\n");
+        printf("Note: EXPERIMENTAL, unverified on real hardware -- see microreticulum.h.\n");
+    } else if (strcmp(action, "disable") == 0) {
+        microreticulum_disable();
+        printf("Reticulum will be disabled after reboot.\n");
+    } else {
+        printf("Unknown action: %s\n", action);
+        printf("Usage: set_reticulum <enable|disable>\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static void register_set_reticulum(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "set_reticulum",
+        .help = "Enable or disable the Reticulum transport node (EXPERIMENTAL)\n"
+                "  set_reticulum              - Show current status\n"
+                "  set_reticulum enable       - Enable Reticulum (after reboot)\n"
+                "  set_reticulum disable      - Disable Reticulum (after reboot)",
+        .hint = " <enable|disable>",
+        .func = &set_reticulum_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+static void register_mesh_uplink(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "mesh_uplink",
+        .help = "Show this router's and mesh peers' Reticulum uplink-availability status\n"
+                "(requires Reticulum enabled -- see set_reticulum)",
+        .func = &mesh_uplink_cmd,
     };
     ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
 }

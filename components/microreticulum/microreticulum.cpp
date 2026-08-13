@@ -20,6 +20,7 @@
 #include "RouterUdpInterface.h"
 #include "EspNowInterface.h"
 #include "FatFsFileSystem.h"
+#include "MeshUplink.h"
 
 #include "esp_log.h"
 #include "nvs.h"
@@ -96,11 +97,14 @@ static void reticulum_task(void *arg)
     reticulum.remote_management_enabled(true);
     reticulum.start();
 
+    mesh_uplink_init();
+
     ESP_LOGI(TAG, "Reticulum transport node running (UDP broadcast :%d%s)", RNS_UDP_PORT,
              espnow_interface.online() ? " + ESP-NOW" : "");
 
     while (true) {
         reticulum.loop();
+        mesh_uplink_tick();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

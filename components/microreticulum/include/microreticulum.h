@@ -56,7 +56,7 @@ extern "C" {
  *    UniversalFileSystem, which wants its own LittleFS partition on ESP32 --
  *    see FatFsFileSystem.h for why. Not exercised against real Identity/path
  *    table persistence yet.
- *  - No console command or web UI exposure yet -- NVS enable/disable only.
+ *  - No web UI exposure yet -- console only (set_reticulum, mesh_uplink).
  *  - Storage requires the router's on-flash FATFS mount (main/esp32_nat_router.c's
  *    initialize_filesystem(), MOUNT_PATH "/data") to already be up, which only
  *    happens when CONFIG_STORE_HISTORY is enabled. If it's off, this fails
@@ -66,6 +66,11 @@ extern "C" {
  *    fragmentation; anything larger is dropped rather than sent corrupted.
  *    See EspNowInterface.h. Only one instance is supported at a time (a
  *    static-pointer bridge from ESP-NOW's C callback into the interface).
+ *  - MeshUplink (mesh_uplink command) only does discovery: routers announce
+ *    whether they have real WAN uplink and every router tracks who's
+ *    announced it, but nothing actually routes traffic through another
+ *    router's uplink yet, and nothing touches the default route. See
+ *    MeshUplink.h for the deliberately-deferred tunnel+NAT design.
  */
 
 /**
