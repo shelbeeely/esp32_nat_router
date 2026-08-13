@@ -81,14 +81,16 @@ if(MRNS_SRCS)
         # This component's sources are almost entirely vendored third-party
         # code (microReticulum, microStore, Crypto, MsgPack, ArxContainer,
         # ArxTypeTraits, DebugLog) developed against a less strict warning
-        # set than this toolchain's -Werror=all default -- the first real
-        # build here surfaced -Werror=switch/parentheses/reorder/
-        # class-memaccess in Link.cpp, FileStore.h, and Memory.cpp alone,
-        # none of them in this component's own ~5 bridge files (RouterUdp/
-        # EspNow/FatFsFileSystem/MeshUplink/microreticulum.cpp). Downgrading
-        # -Werror to warnings for this component only, rather than either
-        # patching the submodules or chasing each warning category
-        # individually as more of the vendored source gets exercised.
+        # set than this toolchain's -Werror=all default -- none of these are
+        # in this component's own ~5 bridge files (RouterUdp/EspNow/
+        # FatFsFileSystem/MeshUplink/microreticulum.cpp). A bare -Wno-error
+        # does NOT retroactively un-promote warnings -Werror=all already
+        # turned into errors (tested: it's a no-op against them), so each
+        # category has to be named explicitly.
+        -Wno-error=switch
+        -Wno-error=parentheses
+        -Wno-error=reorder
+        -Wno-error=class-memaccess
         -Wno-error
     )
 endif()
