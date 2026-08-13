@@ -84,7 +84,7 @@ esptool.py --chip esp32 \
 0x20000 firmware_esp32/esp32_nat_router.bin
 ```
 
-Pre-built binaries are available for: **ESP32**, **ESP32-C3**, **ESP32-C5**, **ESP32-C6**, **ESP32-S3**, and **WT32-ETH01** (Ethernet).
+Pre-built binaries are available for: **ESP32**, **ESP32-C3**, **ESP32-C5**, **ESP32-C6**, **ESP32-S3**, **WT32-ETH01** (Ethernet), and **Xteink X4** (`firmware_xteink_x4/`, a 16MB-flash build sized for the e-ink display and Reticulum mesh support).
 
 See the [Installation](https://github.com/martin-ger/esp32_nat_router/wiki/Installation) wiki page for all chip-specific commands.
 

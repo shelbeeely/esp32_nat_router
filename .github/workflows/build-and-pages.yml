@@ -73,7 +73,7 @@ jobs:
         run: |
           set -e
           mkdir -p site
-          cp index.html manifest_esp32_wifi.json manifest_wt32_eth01.json site/
+          cp index.html manifest_esp32_wifi.json manifest_wt32_eth01.json manifest_xteink_x4.json site/
           for d in firmware-fresh/*/; do
             target_dir="$(basename "$d")"
             mkdir -p "site/$target_dir"

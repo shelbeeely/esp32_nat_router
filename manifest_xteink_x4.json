@@ -1,0 +1,16 @@
+{
+  "name": "ESP32 NAT Router (Xteink X4)",
+  "version": "2.4.14",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-C3",
+      "parts": [
+        { "path": "firmware_xteink_x4/bootloader.bin", "offset": 0 },
+        { "path": "firmware_xteink_x4/partition-table.bin", "offset": 32768 },
+        { "path": "firmware_xteink_x4/ota_data_initial.bin", "offset": 61440 },
+        { "path": "firmware_xteink_x4/esp32_nat_router.bin", "offset": 131072 }
+      ]
+    }
+  ]
+}

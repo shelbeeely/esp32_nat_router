@@ -1,0 +1,19 @@
+# Xteink X4 target overrides. Same ESP32-C3 chip as the generic esp32c3
+# target (this file is loaded on top of sdkconfig.defaults.esp32c3, not
+# instead of it), but the X4 module has 16MB of flash wired in DIO mode --
+# see FreeInk SDK's own reference platformio config -- versus the 4MB the
+# shared esp32c3 target assumes for generic C3 devkits. eink_display,
+# freeink_hw, and microreticulum together don't fit in that target's 1.5MB
+# OTA partitions (a full Reticulum node alone is ~300KB), so this is a
+# separate build variant with its own partition table rather than growing
+# the generic target's partitions for every C3 board that isn't an X4.
+
+# X4 module: 16MB flash, DIO (not QIO)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+
+# Dedicated partition table sized for that flash budget
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_xteink_x4.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_xteink_x4.csv"
