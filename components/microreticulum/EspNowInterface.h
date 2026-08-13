@@ -50,7 +50,11 @@ protected:
 
 private:
     static void recvCallback(const esp_now_recv_info_t *info, const uint8_t *data, int len);
-    static void sendCallback(const uint8_t *mac_addr, esp_now_send_status_t status);
+    /* esp_now_send_cb_t's signature in this ESP-IDF version takes
+     * esp_now_send_info_t (carries the peer MAC plus tx info), not the
+     * older bare MAC-address pointer -- caught by the real build, not
+     * something documented anywhere I'd checked. */
+    static void sendCallback(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
 
     struct RxFrame {
         uint8_t data[ESP_NOW_MAX_DATA_LEN];

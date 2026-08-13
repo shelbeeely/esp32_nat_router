@@ -16,6 +16,12 @@
  * question entirely for this first pass.
  */
 
+/* microStore's File.h/FileSystem.h use std::string (debugString()) without
+ * including <string> themselves -- they've evidently always been compiled
+ * after something else in the TU pulled it in transitively. Include it
+ * explicitly first rather than relying on that. */
+#include <string>
+
 #include <microStore/File.h>
 #include <microStore/FileSystem.h>
 

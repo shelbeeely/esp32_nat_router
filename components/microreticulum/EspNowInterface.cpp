@@ -141,8 +141,8 @@ void EspNowInterface::on_incoming(const Bytes &data) {
     xQueueSend(s_instance->_rxQueue, &frame, 0);
 }
 
-/*static*/ void EspNowInterface::sendCallback(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    (void)mac_addr;
+/*static*/ void EspNowInterface::sendCallback(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
+    (void)tx_info;
     if (status != ESP_NOW_SEND_SUCCESS) {
         ESP_LOGW(TAG, "ESP-NOW send failed");
     }
