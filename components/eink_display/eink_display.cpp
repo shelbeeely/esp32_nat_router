@@ -30,8 +30,9 @@
  *
  * Status screen is paged (LEFT/RIGHT cycles Overview/Clients/System, mirrors
  * Meshtastic InkHUD's applet-tiling idea) rather than one screen with
- * everything crammed on -- see StatusPage below. Auto-show (also from
- * InkHUD) jumps to the relevant page when a client connects/disconnects or
+ * everything crammed on -- see StatusPage below. Event notifications (also
+ * from InkHUD) post a message into a banner reserved on every page -- rather
+ * than jumping to a different page -- when a client connects/disconnects or
  * the uplink changes state, rate-limited so a flapping client can't trigger
  * a refresh storm; toggle it from the settings menu.
  */
@@ -87,16 +88,35 @@ static const char *TAG = "eink";
  * pay for a ghost-clearing HALF_REFRESH every ~2 minutes. */
 #define EINK_UPDATE_INTERVAL_MS   5000
 #define EINK_HALF_REFRESH_EVERY   24
+#define EINK_RESYNC_EVERY         6   /* ~30s, matches oled_display's cadence */
 
-/* Auto-show (Meshtastic InkHUD calls this the same thing): jump to the page
- * relevant to a state change -- a client connecting/disconnecting, or the
- * uplink going up/down -- instead of only surfacing it once the periodic
- * refresh happens to redraw whatever page is currently showing. Read once at
- * task start, same "changes apply after reboot" convention as the other menu
- * toggles (see kMenuItems below). */
-#define AUTO_SHOW_NVS_KEY "eink_autoshow"
+/* Buttons and event state are polled every tick regardless of display mode
+ * (status vs menu) so input/changes are picked up promptly; the e-paper
+ * itself is only ever repainted when something actually changed (periodic
+ * status refresh, a menu edge, or a notification appearing/expiring), not on
+ * every tick. All other tick-based durations below are expressed in ticks of
+ * this. */
+#define EINK_TICK_MS                 100
+#define EINK_STATUS_REFRESH_TICKS    (EINK_UPDATE_INTERVAL_MS / EINK_TICK_MS)
+#define EINK_MENU_IDLE_TIMEOUT_TICKS (20000 / EINK_TICK_MS) /* back to status after 20s idle */
+/* Minimum gap between event notifications -- without this, a flapping
+ * client (weak signal, reconnecting repeatedly) would trigger a flash-y
+ * e-paper refresh storm. The periodic EINK_STATUS_REFRESH_TICKS redraw
+ * separately still shows the change within 5s regardless of this cooldown. */
+#define EINK_NOTIFY_COOLDOWN_TICKS   (5000 / EINK_TICK_MS)
+#define EINK_NOTIFY_DURATION_TICKS   (8000 / EINK_TICK_MS) /* how long a notification stays up */
 
-static void get_auto_show_config(bool *enabled)
+/* Event notifications (Meshtastic InkHUD's "notification" alternative to
+ * auto-show): a client connecting/disconnecting, or the uplink changing
+ * state, shows a message in a banner reserved on every status page --
+ * see draw_page_header() -- rather than jumping to a different page. The
+ * banner area is always reserved at a fixed height whether or not a
+ * notification is active, so page content never shifts when one appears or
+ * clears. Read once at task start, same "changes apply after reboot"
+ * convention as the other menu toggles (see kMenuItems below). */
+#define NOTIFY_NVS_KEY "eink_notify"
+
+static void get_notify_config(bool *enabled)
 {
     nvs_handle_t nvs;
     int32_t val;
@@ -106,22 +126,21 @@ static void get_auto_show_config(bool *enabled)
     if (nvs_open(PARAM_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK)
         return;
 
-    if (nvs_get_i32(nvs, AUTO_SHOW_NVS_KEY, &val) == ESP_OK)
+    if (nvs_get_i32(nvs, NOTIFY_NVS_KEY, &val) == ESP_OK)
         *enabled = (val != 0);
 
     nvs_close(nvs);
 }
 
-static void set_auto_show_config(bool enabled)
+static void set_notify_config(bool enabled)
 {
     nvs_handle_t nvs;
     if (nvs_open(PARAM_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
-        nvs_set_i32(nvs, AUTO_SHOW_NVS_KEY, enabled ? 1 : 0);
+        nvs_set_i32(nvs, NOTIFY_NVS_KEY, enabled ? 1 : 0);
         nvs_commit(nvs);
         nvs_close(nvs);
     }
 }
-#define EINK_RESYNC_EVERY         6   /* ~30s, matches oled_display's cadence */
 
 /* ---- Minimal direct-framebuffer text renderer ---- */
 
@@ -197,9 +216,26 @@ static const char *kStatusPageTitles[STATUS_PAGE_COUNT] = {
     "System",
 };
 
+/* ---- Event notification banner ---- */
+
+#define NOTIFICATION_MAX_LEN 48
+
+static char s_notificationText[NOTIFICATION_MAX_LEN] = {0};
+static int s_notificationTicksLeft = 0;
+
+static void show_notification(const char *text)
+{
+    strncpy(s_notificationText, text, sizeof(s_notificationText) - 1);
+    s_notificationText[sizeof(s_notificationText) - 1] = '\0';
+    s_notificationTicksLeft = EINK_NOTIFY_DURATION_TICKS;
+}
+
 /* Title + "page/count" indicator (font is fixed-width, so the indicator's
- * pixel width is computable without a dry-run draw) + separator rule.
- * Returns the y to start page content at. */
+ * pixel width is computable without a dry-run draw) + separator rule, then a
+ * reserved notification banner row -- always the same height whether or not
+ * s_notificationTicksLeft is active, so page content below it never shifts
+ * when a notification appears or clears. Returns the y to start page content
+ * at. */
 static int draw_page_header(uint8_t *fb, int wbytes, int w, int h, const char *title, int page, int pageCount)
 {
     const int margin = 24;
@@ -218,7 +254,18 @@ static int draw_page_header(uint8_t *fb, int wbytes, int w, int h, const char *t
 
     y += 7 * 6 + 18;
     fb_draw_hline(fb, wbytes, w, h, margin, w - margin, y, 2);
-    y += 26;
+    y += 20;
+
+    const int notifyScale = 3;
+    if (s_notificationTicksLeft > 0) {
+        char line[NOTIFICATION_MAX_LEN + 4];
+        snprintf(line, sizeof(line), "* %s", s_notificationText);
+        fb_draw_string(fb, wbytes, w, h, margin, y, line, notifyScale);
+    }
+    y += 7 * notifyScale + 16;
+    fb_draw_hline(fb, wbytes, w, h, margin, w - margin, y, 1);
+    y += 20;
+
     return y;
 }
 
@@ -361,7 +408,7 @@ enum MenuAction {
     MENU_TOGGLE_EINK,
     MENU_TOGGLE_RETICULUM,
     MENU_TOGGLE_FREEINK_HW,
-    MENU_TOGGLE_AUTOSHOW,
+    MENU_TOGGLE_NOTIFY,
     MENU_REBOOT,
 };
 
@@ -375,7 +422,7 @@ static const MenuItem kMenuItems[] = {
     { "E-Ink Display",      MENU_TOGGLE_EINK,       true },
     { "Reticulum Mesh",     MENU_TOGGLE_RETICULUM,  true },
     { "Battery/Power Mon.", MENU_TOGGLE_FREEINK_HW, true },
-    { "Auto-Show Events",   MENU_TOGGLE_AUTOSHOW,   true },
+    { "Event Notifications", MENU_TOGGLE_NOTIFY,   true },
     { "Reboot Now",         MENU_REBOOT,            false },
 };
 static const int kMenuItemCount = sizeof(kMenuItems) / sizeof(kMenuItems[0]);
@@ -403,11 +450,11 @@ static void render_menu(freeink::FreeInkDisplay &display, int selected)
     const int scale = 3;
     const int line_h = 7 * scale + 16;
 
-    bool einkEn = false, rnsEn = false, fkhwEn = false, autoShowEn = false;
+    bool einkEn = false, rnsEn = false, fkhwEn = false, notifyEn = false;
     eink_display_get_config(&einkEn);
     microreticulum_get_config(&rnsEn);
     freeink_hw_get_config(&fkhwEn);
-    get_auto_show_config(&autoShowEn);
+    get_notify_config(&notifyEn);
 
     char line[64];
     for (int i = 0; i < kMenuItemCount; i++) {
@@ -418,7 +465,7 @@ static void render_menu(freeink::FreeInkDisplay &display, int selected)
                 case MENU_TOGGLE_EINK:       val = einkEn; break;
                 case MENU_TOGGLE_RETICULUM:  val = rnsEn; break;
                 case MENU_TOGGLE_FREEINK_HW: val = fkhwEn; break;
-                case MENU_TOGGLE_AUTOSHOW:   val = autoShowEn; break;
+                case MENU_TOGGLE_NOTIFY:   val = notifyEn; break;
                 default: break;
             }
             snprintf(line, sizeof(line), "%s%-18s [%s]", cursor, kMenuItems[i].label, val ? "ON" : "OFF");
@@ -470,10 +517,10 @@ static bool handle_menu_edges(uint8_t edges, int &selected)
                 en ? freeink_hw_disable() : freeink_hw_enable();
                 break;
             }
-            case MENU_TOGGLE_AUTOSHOW: {
+            case MENU_TOGGLE_NOTIFY: {
                 bool en = false;
-                get_auto_show_config(&en);
-                set_auto_show_config(!en);
+                get_notify_config(&en);
+                set_notify_config(!en);
                 break;
             }
             case MENU_REBOOT:
@@ -486,19 +533,6 @@ static bool handle_menu_edges(uint8_t edges, int &selected)
 }
 
 /* ---- FreeRTOS task ---- */
-
-/* Buttons are polled every tick regardless of display mode (status vs menu)
- * so pressing CONFIRM on the status screen is picked up promptly; the
- * e-paper itself is only ever repainted when something actually changed
- * (periodic status refresh, or a menu edge), not on every tick. */
-#define EINK_TICK_MS                 100
-#define EINK_STATUS_REFRESH_TICKS    (EINK_UPDATE_INTERVAL_MS / EINK_TICK_MS)
-#define EINK_MENU_IDLE_TIMEOUT_TICKS (20000 / EINK_TICK_MS) /* back to status after 20s idle */
-/* Minimum gap between auto-show page jumps -- without this, a flapping
- * client (weak signal, reconnecting repeatedly) would trigger a flash-y
- * e-paper refresh storm. The periodic EINK_STATUS_REFRESH_TICKS redraw
- * separately still shows the change within 5s regardless of this cooldown. */
-#define EINK_AUTO_SHOW_COOLDOWN_TICKS (5000 / EINK_TICK_MS)
 
 enum EinkMode { EINK_MODE_STATUS, EINK_MODE_MENU };
 
@@ -527,11 +561,11 @@ static void eink_task(void *arg)
     ESP_LOGI(TAG, "Xteink X4 e-ink display running (%dx%d)",
              display.getDisplayWidth(), display.getDisplayHeight());
 
-    bool autoShowEnabled = false;
-    get_auto_show_config(&autoShowEnabled);
+    bool notifyEnabled = false;
+    get_notify_config(&notifyEnabled);
     uint16_t lastConnectCount = connect_count;
     bool lastApConnect = ap_connect;
-    int ticksSinceAutoShow = EINK_AUTO_SHOW_COOLDOWN_TICKS; /* allow one immediately */
+    int ticksSinceNotify = EINK_NOTIFY_COOLDOWN_TICKS; /* allow one immediately */
 
     EinkMode mode = EINK_MODE_STATUS;
     int statusPage = STATUS_PAGE_OVERVIEW;
@@ -568,33 +602,39 @@ static void eink_task(void *arg)
                 needRedraw = true;
             }
 
-            /* Auto-show: jump to the page relevant to a state change instead
-             * of only surfacing it once the periodic refresh above happens
-             * to redraw whatever page is already showing. */
-            if (autoShowEnabled) {
-                ticksSinceAutoShow++;
+            /* Event notifications: post a message into the reserved banner
+             * (draw_page_header()) instead of jumping to a different page --
+             * so it's visible no matter which page the user is currently
+             * looking at, without disturbing what they're looking at. */
+            if (notifyEnabled) {
+                ticksSinceNotify++;
 
                 uint16_t curConnectCount = connect_count;
                 bool curApConnect = ap_connect;
                 bool clientsChanged = (curConnectCount != lastConnectCount);
+                bool clientJoined = (curConnectCount > lastConnectCount);
                 bool uplinkChanged = (curApConnect != lastApConnect);
                 lastConnectCount = curConnectCount;
                 lastApConnect = curApConnect;
 
-                if (ticksSinceAutoShow >= EINK_AUTO_SHOW_COOLDOWN_TICKS) {
-                    int targetPage = -1;
+                if ((uplinkChanged || clientsChanged) && ticksSinceNotify >= EINK_NOTIFY_COOLDOWN_TICKS) {
                     if (uplinkChanged)
-                        targetPage = STATUS_PAGE_OVERVIEW;
-                    else if (clientsChanged)
-                        targetPage = STATUS_PAGE_CLIENTS;
+                        show_notification(curApConnect ? "Uplink connected" : "Uplink lost");
+                    else
+                        show_notification(clientJoined ? "Client connected" : "Client disconnected");
 
-                    if (targetPage >= 0 && targetPage != statusPage) {
-                        statusPage = targetPage;
-                        statusTicks = 0;
-                        needRedraw = true;
-                        ticksSinceAutoShow = 0;
-                    }
+                    needRedraw = true;
+                    ticksSinceNotify = 0;
                 }
+            }
+
+            /* Tick the active notification down; when it expires, one more
+             * redraw is needed to clear it out of the reserved banner area
+             * (e-paper otherwise just keeps showing whatever was last
+             * painted there). */
+            if (s_notificationTicksLeft > 0) {
+                if (--s_notificationTicksLeft == 0)
+                    needRedraw = true;
             }
         } else { /* EINK_MODE_MENU */
             if (edges) {
