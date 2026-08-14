@@ -6,7 +6,7 @@
 set -e  # Exit on any error
 
 # Build targets in order
-BUILD_ORDER=("esp32" "wt32_eth01" "esp32s3" "esp32c5" "esp32c6" "esp32c3")
+BUILD_ORDER=("esp32" "wt32_eth01" "esp32s3" "esp32c5" "esp32c6" "esp32c3" "xteink_x4")
 
 # Target descriptions
 declare -A TARGET_DESC=(
@@ -16,6 +16,7 @@ declare -A TARGET_DESC=(
     ["esp32c3"]="ESP32-C3"
     ["esp32c5"]="ESP32-C5"
     ["wt32_eth01"]="WT32-ETH01 (Ethernet)"
+    ["xteink_x4"]="Xteink X4 (16MB flash, e-ink+Reticulum)"
 )
 
 # IDF chip target for each build target
@@ -26,21 +27,29 @@ declare -A TARGET_CHIP=(
     ["esp32c3"]="esp32c3"
     ["esp32c5"]="esp32c5"
     ["wt32_eth01"]="esp32"
+    ["xteink_x4"]="esp32c3"
 )
 
 # Extra sdkconfig defaults (semicolon-separated)
 declare -A TARGET_SDKCONFIG=(
     ["wt32_eth01"]="sdkconfig.defaults;sdkconfig.defaults.wt32_eth01"
+    # Same chip as the plain esp32c3 target (CPU freq, USB console, Arduino
+    # component settings), plus the X4's 16MB-flash partition table -- see
+    # sdkconfig.defaults.xteink_x4's own comment for why this needs to be a
+    # separate variant rather than growing the generic target's partitions.
+    ["xteink_x4"]="sdkconfig.defaults;sdkconfig.defaults.esp32c3;sdkconfig.defaults.xteink_x4"
 )
 
 # Custom build directory (empty = default "build")
 declare -A TARGET_BUILD_DIR=(
     ["wt32_eth01"]="build_eth"
+    ["xteink_x4"]="build_x4"
 )
 
 # Custom sdkconfig file path (empty = default "sdkconfig")
 declare -A TARGET_SDKCONFIG_FILE=(
     ["wt32_eth01"]="sdkconfig.eth"
+    ["xteink_x4"]="sdkconfig.x4"
 )
 
 # Colors for output

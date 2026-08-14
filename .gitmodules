@@ -1,0 +1,27 @@
+[submodule "third_party/freeink-sdk"]
+	path = third_party/freeink-sdk
+	url = https://github.com/Free-Ink/freeink-sdk.git
+[submodule "third_party/MsgPack"]
+	path = third_party/MsgPack
+	url = https://github.com/hideakitai/MsgPack.git
+[submodule "third_party/ArxContainer"]
+	path = third_party/ArxContainer
+	url = https://github.com/hideakitai/ArxContainer.git
+[submodule "third_party/ArxTypeTraits"]
+	path = third_party/ArxTypeTraits
+	url = https://github.com/hideakitai/ArxTypeTraits.git
+[submodule "third_party/DebugLog"]
+	path = third_party/DebugLog
+	url = https://github.com/hideakitai/DebugLog.git
+[submodule "third_party/Crypto"]
+	path = third_party/Crypto
+	url = https://github.com/attermann/Crypto.git
+[submodule "third_party/microstore"]
+	path = third_party/microstore
+	url = https://github.com/attermann/microStore.git
+[submodule "third_party/microReticulum"]
+	path = third_party/microReticulum
+	url = https://github.com/attermann/microReticulum.git
+[submodule "third_party/SdFat"]
+	path = third_party/SdFat
+	url = https://github.com/greiman/SdFat.git

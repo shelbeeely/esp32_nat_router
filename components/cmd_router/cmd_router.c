@@ -50,6 +50,10 @@ extern uint8_t web_ui_get_bind(void);
 extern void    web_ui_set_bind(uint8_t bind);
 #include "syslog_client.h"
 #include "oled_display.h"
+#include "eink_display.h"
+#include "freeink_hw.h"
+#include "MeshUplink.h"
+#include "microreticulum.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 
@@ -101,6 +105,13 @@ static void register_syslog_cmd(void);
 #if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32S3)
 static void register_set_oled(void);
 static void register_set_oled_gpio(void);
+#endif
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+static void register_set_eink(void);
+static void register_set_freeink_hw(void);
+static void register_battery(void);
+static void register_set_reticulum(void);
+static void register_mesh_uplink(void);
 #endif
 #if !CONFIG_ETH_UPLINK
 static void register_scan(void);
@@ -448,6 +459,13 @@ void register_router(void)
 #if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32S3)
     register_set_oled();
     register_set_oled_gpio();
+#endif
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+    register_set_eink();
+    register_set_freeink_hw();
+    register_battery();
+    register_set_reticulum();
+    register_mesh_uplink();
 #endif
 }
 
@@ -3539,6 +3557,210 @@ static void register_set_oled_gpio(void)
 }
 
 #endif /* CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3 */
+
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+
+/* 'set_eink' command - enable/disable the Xteink X4 e-ink status display */
+static int set_eink_cmd(int argc, char **argv)
+{
+    if (argc < 2) {
+        bool enabled;
+        eink_display_get_config(&enabled);
+        printf("E-ink display: %s\n", enabled ? "enabled" : "disabled");
+        printf("\nUsage: set_eink <enable|disable>\n");
+        return 0;
+    }
+
+    const char *action = argv[1];
+    if (strcmp(action, "enable") == 0) {
+        eink_display_enable();
+        printf("E-ink display will be enabled after reboot.\n");
+        printf("Note: shares GPIO5/6 with the OLED display's default I2C pins -\n");
+        printf("      do not enable both on the same board.\n");
+    } else if (strcmp(action, "disable") == 0) {
+        eink_display_disable();
+        printf("E-ink display will be disabled after reboot.\n");
+    } else {
+        printf("Unknown action: %s\n", action);
+        printf("Usage: set_eink <enable|disable>\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static void register_set_eink(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "set_eink",
+        .help = "Enable or disable the Xteink X4 e-ink status display\n"
+                "  set_eink              - Show current status\n"
+                "  set_eink enable       - Enable e-ink display (after reboot)\n"
+                "  set_eink disable      - Disable e-ink display (after reboot)",
+        .hint = " <enable|disable>",
+        .func = &set_eink_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+/* 'set_freeink_hw' command - enable/disable Xteink X4 buttons/battery/power */
+static int set_freeink_hw_cmd(int argc, char **argv)
+{
+    if (argc < 2) {
+        bool enabled;
+        freeink_hw_get_config(&enabled);
+        printf("Xteink X4 hardware support (buttons/battery/power): %s\n", enabled ? "enabled" : "disabled");
+        printf("\nUsage: set_freeink_hw <enable|disable>\n");
+        return 0;
+    }
+
+    const char *action = argv[1];
+    if (strcmp(action, "enable") == 0) {
+        freeink_hw_enable();
+        printf("Xteink X4 hardware support will be enabled after reboot.\n");
+    } else if (strcmp(action, "disable") == 0) {
+        freeink_hw_disable();
+        printf("Xteink X4 hardware support will be disabled after reboot.\n");
+    } else {
+        printf("Unknown action: %s\n", action);
+        printf("Usage: set_freeink_hw <enable|disable>\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static void register_set_freeink_hw(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "set_freeink_hw",
+        .help = "Enable or disable Xteink X4 buttons/battery/power management\n"
+                "  set_freeink_hw              - Show current status\n"
+                "  set_freeink_hw enable       - Enable (after reboot)\n"
+                "  set_freeink_hw disable      - Disable (after reboot)",
+        .hint = " <enable|disable>",
+        .func = &set_freeink_hw_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+/* 'battery' command - show Xteink X4 battery status */
+static int battery_cmd(int argc, char **argv)
+{
+    bool enabled;
+    freeink_hw_get_config(&enabled);
+    if (!enabled) {
+        printf("Battery monitoring not enabled - run 'set_freeink_hw enable' and reboot.\n");
+        return 1;
+    }
+
+    printf("Battery: %u%%%s\n", (unsigned)freeink_hw_get_battery_percent(),
+           freeink_hw_is_charging() ? " (charging)" : "");
+    return 0;
+}
+
+static void register_battery(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "battery",
+        .help = "Show Xteink X4 battery status",
+        .func = &battery_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+/* 'mesh_uplink' command - show this router's and peers' mesh uplink status */
+static int mesh_uplink_cmd(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    char selfHash[MESH_UPLINK_HASH_HEX_LEN];
+    bool selfUplink;
+    mesh_uplink_get_self(selfHash, sizeof(selfHash), &selfUplink);
+    printf("This router: %s (uplink: %s)\n",
+           selfHash[0] ? selfHash : "not started - run 'set_reticulum enable' and reboot",
+           selfUplink ? "yes" : "no");
+
+    mesh_uplink_gateway_t gateways[MESH_UPLINK_MAX_GATEWAYS];
+    int count = mesh_uplink_list_gateways(gateways, MESH_UPLINK_MAX_GATEWAYS);
+    if (count == 0) {
+        printf("No mesh peers heard from yet.\n");
+        return 0;
+    }
+
+    printf("\n%-33s %-8s %-6s %-6s %s\n", "Destination", "Uplink", "Hops", "Age", "Label");
+    for (int i = 0; i < count; i++) {
+        char hopsStr[8];
+        if (gateways[i].hops == 255) {
+            snprintf(hopsStr, sizeof(hopsStr), "?");
+        } else {
+            snprintf(hopsStr, sizeof(hopsStr), "%u", (unsigned)gateways[i].hops);
+        }
+        printf("%-33s %-8s %-6s %-6us %s\n",
+               gateways[i].hash_hex,
+               gateways[i].uplink_available ? "yes" : "no",
+               hopsStr,
+               (unsigned)gateways[i].age_secs,
+               gateways[i].label);
+    }
+    return 0;
+}
+
+/* 'set_reticulum' command - enable/disable the Reticulum transport node */
+static int set_reticulum_cmd(int argc, char **argv)
+{
+    if (argc < 2) {
+        bool enabled;
+        microreticulum_get_config(&enabled);
+        printf("Reticulum transport node: %s\n", enabled ? "enabled" : "disabled");
+        printf("\nUsage: set_reticulum <enable|disable>\n");
+        return 0;
+    }
+
+    const char *action = argv[1];
+    if (strcmp(action, "enable") == 0) {
+        microreticulum_enable();
+        printf("Reticulum will be enabled after reboot.\n");
+        printf("Note: EXPERIMENTAL, unverified on real hardware -- see microreticulum.h.\n");
+    } else if (strcmp(action, "disable") == 0) {
+        microreticulum_disable();
+        printf("Reticulum will be disabled after reboot.\n");
+    } else {
+        printf("Unknown action: %s\n", action);
+        printf("Usage: set_reticulum <enable|disable>\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static void register_set_reticulum(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "set_reticulum",
+        .help = "Enable or disable the Reticulum transport node (EXPERIMENTAL)\n"
+                "  set_reticulum              - Show current status\n"
+                "  set_reticulum enable       - Enable Reticulum (after reboot)\n"
+                "  set_reticulum disable      - Disable Reticulum (after reboot)",
+        .hint = " <enable|disable>",
+        .func = &set_reticulum_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+static void register_mesh_uplink(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "mesh_uplink",
+        .help = "Show this router's and mesh peers' Reticulum uplink-availability status\n"
+                "(requires Reticulum enabled -- see set_reticulum)",
+        .func = &mesh_uplink_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
+#endif /* CONFIG_IDF_TARGET_ESP32C3 */
 
 #if !CONFIG_ETH_UPLINK
 /* Helper function to convert auth mode to string */

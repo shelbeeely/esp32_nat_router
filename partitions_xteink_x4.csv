@@ -1,0 +1,18 @@
+# Xteink X4 partition table -- 16MB flash (see FreeInk SDK's own reference
+# config: "The Xteink X4 module is wired for DIO / 16 MB"), not the 4MB the
+# shared esp32c3 target assumes for generic C3 devkits. Small partitions
+# (nvs/otadata/phy_init) and the ota_0 offset are kept identical to
+# partitions_example.csv so the web installer's flash offsets don't need to
+# diverge beyond image size; only the app/storage partitions grow to fit
+# eink_display + freeink_hw + microreticulum (a full Reticulum node pulls in
+# Crypto/microStore/MsgPack/ArxContainer/ArxTypeTraits/DebugLog -- see
+# components/microreticulum's known-gaps notes) alongside everything else
+# this firmware already does.
+#
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  24K,
+otadata,  data, ota,     0xf000,  8K,
+phy_init, data, phy,     0x11000, 4K,
+ota_0,    app,  ota_0,   0x20000, 4000K,
+ota_1,    app,  ota_1,   ,        4000K,
+storage,  data, fat,     ,        4000K,

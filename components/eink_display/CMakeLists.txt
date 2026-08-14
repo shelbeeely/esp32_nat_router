@@ -1,0 +1,73 @@
+# Xteink X4 e-ink status display. FreeInk SDK is vendored as a git submodule
+# (third_party/freeink-sdk); only its X4 driver stack (FreeInkDisplay + EpdBus
+# + Ssd1677Driver) is compiled in, on the ESP32-C3 target the X4 ships with.
+if(IDF_TARGET STREQUAL "esp32c3")
+    set(FREEINK_SDK_DIR      "${CMAKE_CURRENT_LIST_DIR}/../../third_party/freeink-sdk")
+    set(FREEINK_DISPLAY_DIR  "${FREEINK_SDK_DIR}/libs/display/FreeInkDisplay")
+    set(FREEINK_BOARDCFG_DIR "${FREEINK_SDK_DIR}/libs/hardware/BoardConfig")
+
+    if(NOT EXISTS "${FREEINK_DISPLAY_DIR}/include/FreeInkDisplay.h")
+        message(FATAL_ERROR
+            "eink_display: third_party/freeink-sdk submodule is missing or not "
+            "checked out. Run: git submodule update --init third_party/freeink-sdk")
+    endif()
+
+    # BoardConfig.h derives FREEINK_DRIVER_UC8179 and FREEINK_DRIVER_UC8279_X4
+    # (the UltraChip-sibling controllers some X4 production runs ship instead
+    # of the original SSD1677 -- see BoardConfig.h's comment on runtime
+    # display-controller detection) from FREEINK_DEVICE_X4 unconditionally,
+    # so FreeInkDisplay::selectDriver() references their factory functions
+    # regardless of whether we ever expect to hit that runtime path. Link
+    # errors without these two alongside Ssd1677Driver.cpp.
+    set(EINK_SRCS
+        "eink_display.cpp"
+        "${FREEINK_DISPLAY_DIR}/src/FreeInkDisplay.cpp"
+        "${FREEINK_DISPLAY_DIR}/src/bus/EpdBus.cpp"
+        "${FREEINK_DISPLAY_DIR}/src/driver/Ssd1677Driver.cpp"
+        "${FREEINK_DISPLAY_DIR}/src/driver/Uc8179Driver.cpp"
+        "${FREEINK_DISPLAY_DIR}/src/driver/Uc8279X4Driver.cpp"
+    )
+    set(EINK_PRIV_INCLUDE_DIRS
+        "${FREEINK_DISPLAY_DIR}/include"
+        "${FREEINK_DISPLAY_DIR}/src"
+        "${FREEINK_BOARDCFG_DIR}/include"
+        # Top-level project headers (router_config.h, dhcp_reservations.h) for
+        # the Clients/System status pages -- same path cmd_router/dhcpserver
+        # already add themselves. The functions they declare (get_connected_
+        # clients(), get_uptime_seconds()) are defined in the main component;
+        # linking to them from here mirrors the extern-declared main globals
+        # (ap_connect, etc.) already used below, just via the real header.
+        "${CMAKE_SOURCE_DIR}/include"
+    )
+    set(EINK_REQUIRES nvs_flash freertos log driver esp_wifi esp_netif lwip)
+    # microreticulum: the on-device settings menu toggles Reticulum on/off.
+    set(EINK_PRIV_REQUIRES espressif__arduino-esp32 freeink_hw microreticulum)
+else()
+    set(EINK_SRCS "")
+    set(EINK_PRIV_INCLUDE_DIRS "")
+    set(EINK_REQUIRES "")
+    set(EINK_PRIV_REQUIRES "")
+endif()
+
+idf_component_register(
+    SRCS ${EINK_SRCS}
+    INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS ${EINK_PRIV_INCLUDE_DIRS}
+    REQUIRES ${EINK_REQUIRES}
+    PRIV_REQUIRES ${EINK_PRIV_REQUIRES}
+)
+
+if(EINK_SRCS)
+    # FreeInk targets C++20. Single-framebuffer mode trades the SSD1677's
+    # dual-RAM differential support for skipping a second ~48KB host-side
+    # framebuffer copy -- the tradeoff FreeInk's own X4-only sample build
+    # makes for the C3's tight RAM (see platformio.sample.ini upstream).
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        FREEINK_DEVICE_X4=1
+        EINK_DISPLAY_SINGLE_BUFFER_MODE=1
+    )
+    target_compile_options(${COMPONENT_LIB} PRIVATE
+        -Os
+        $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++2a>
+    )
+endif()
